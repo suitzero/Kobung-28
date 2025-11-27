@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, SafeAreaView } from 'react-native';
+import { Audio } from 'expo-av';
 import CompanionScene from './components/CompanionScene';
 
 export default function App() {
@@ -7,6 +8,18 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Voice state
+  const [recording, setRecording] = useState();
+  const [permissionResponse, requestPermission] = Audio.usePermissions();
+  const [isRecording, setIsRecording] = useState(false);
+
+  useEffect(() => {
+    // Request permissions on mount if not granted
+    if (permissionResponse && permissionResponse.status !== 'granted') {
+      requestPermission();
+    }
+  }, [permissionResponse]);
 
   const sendMessage = async () => {
     if (!inputText.trim()) return;
@@ -17,8 +30,6 @@ export default function App() {
     setIsLoading(true);
 
     try {
-      // Replace with your backend URL
-      // For Android Emulator use 10.0.2.2, for iOS simulator use localhost
       const backendUrl = 'http://localhost:3000/chat';
 
       const response = await fetch(backendUrl, {
@@ -34,13 +45,89 @@ export default function App() {
 
       setMessages(prev => [...prev, aiMessage]);
 
-      // Simulate speaking animation
       setIsSpeaking(true);
-      setTimeout(() => setIsSpeaking(false), 3000); // Stop after 3 seconds or based on text length
+      setTimeout(() => setIsSpeaking(false), 3000);
 
     } catch (error) {
       console.error("Error sending message:", error);
       setMessages(prev => [...prev, { role: 'system', content: 'Error connecting to companion backend.' }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      if (permissionResponse.status !== 'granted') {
+        console.log('Requesting permission..');
+        await requestPermission();
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      console.log('Starting recording..');
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      setRecording(recording);
+      setIsRecording(true);
+      console.log('Recording started');
+    } catch (err) {
+      console.error('Failed to start recording', err);
+    }
+  };
+
+  const stopRecording = async () => {
+    console.log('Stopping recording..');
+    setRecording(undefined);
+    setIsRecording(false);
+
+    if (!recording) return;
+
+    await recording.stopAndUnloadAsync();
+    const uri = recording.getURI();
+    console.log('Recording stopped and stored at', uri);
+
+    sendAudio(uri);
+  };
+
+  const sendAudio = async (uri) => {
+    setIsLoading(true);
+    try {
+      const backendUrl = 'http://localhost:3000/voice';
+
+      const formData = new FormData();
+      formData.append('audio', {
+        uri: uri,
+        type: 'audio/m4a', // expo-av default is m4a
+        name: 'voice.m4a',
+      });
+
+      const response = await fetch(backendUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      // Add user's transcribed text
+      const userMessage = { role: 'user', content: `🎤 ${data.transcription}` };
+      const aiMessage = { role: 'ai', content: data.reply };
+
+      setMessages(prev => [...prev, userMessage, aiMessage]);
+
+      setIsSpeaking(true);
+      setTimeout(() => setIsSpeaking(false), 3000);
+
+    } catch (error) {
+      console.error("Error sending voice:", error);
+      setMessages(prev => [...prev, { role: 'system', content: 'Error sending voice message.' }]);
     } finally {
       setIsLoading(false);
     }
@@ -59,15 +146,24 @@ export default function App() {
                 <Text style={styles.messageText}>{msg.content}</Text>
               </View>
             ))}
-            {isLoading && <Text style={styles.loadingText}>Companion is thinking...</Text>}
+            {isLoading && <Text style={styles.loadingText}>Companion is listening/thinking...</Text>}
         </View>
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.inputContainer}>
+          <TouchableOpacity
+            style={[styles.micButton, isRecording && styles.micButtonRecording]}
+            onPressIn={startRecording}
+            onPressOut={stopRecording}
+            activeOpacity={0.7}
+          >
+             <Text style={styles.micButtonText}>{isRecording ? '🔴' : '🎤'}</Text>
+          </TouchableOpacity>
+
           <TextInput
             style={styles.input}
             value={inputText}
             onChangeText={setInputText}
-            placeholder="Talk to your companion..."
+            placeholder="Type or hold mic..."
             placeholderTextColor="#999"
           />
           <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
@@ -146,4 +242,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
+  micButton: {
+    backgroundColor: '#0f3460',
+    borderRadius: 25,
+    width: 50,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  micButtonRecording: {
+    backgroundColor: 'red',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  micButtonText: {
+    fontSize: 24,
+  }
 });
