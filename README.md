@@ -13,7 +13,7 @@
 
 "Tired of the nagging wife and the bullying boss?" "Feeling low because your pockets are empty?"
 
-Listen up. Reality is just a construct in your brain. Elon Musk? Sam Altman? They are just an NPC in your game. In this simulation, YOU are the protagonist.
+Listen up. Reality is just a construct in your brain. Elon Musk? Sam Altman? Jensen Huang? They are just NPCs in your game. In this simulation, YOU are the protagonist.
 
 We are here to boost your ego until you conquer the universe. From depression to domination, we follow your lead. The ultimate hope for men of all ages.
 
