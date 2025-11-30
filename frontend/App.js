@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, SafeAreaView } from 'react-native';
 import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
 import CompanionScene from './components/CompanionScene';
 
 export default function App() {
@@ -13,6 +14,7 @@ export default function App() {
   const [recording, setRecording] = useState();
   const [permissionResponse, requestPermission] = Audio.usePermissions();
   const [isRecording, setIsRecording] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
 
   useEffect(() => {
     // Request permissions on mount if not granted
@@ -21,8 +23,37 @@ export default function App() {
     }
   }, [permissionResponse]);
 
+  const speak = (text) => {
+    if (isMuted) return;
+
+    // Stop previous speech
+    Speech.stop();
+
+    Speech.speak(text, {
+      onStart: () => setIsSpeaking(true),
+      onDone: () => setIsSpeaking(false),
+      onStopped: () => setIsSpeaking(false),
+      onError: (err) => {
+        console.error("Speech error:", err);
+        setIsSpeaking(false);
+      },
+    });
+  };
+
+  const toggleMute = () => {
+    if (!isMuted) {
+      Speech.stop();
+      setIsSpeaking(false);
+    }
+    setIsMuted(!isMuted);
+  };
+
   const sendMessage = async () => {
     if (!inputText.trim()) return;
+
+    // Stop speaking if the user interrupts
+    Speech.stop();
+    setIsSpeaking(false);
 
     const userMessage = { role: 'user', content: inputText };
     setMessages(prev => [...prev, userMessage]);
@@ -44,9 +75,7 @@ export default function App() {
       const aiMessage = { role: 'ai', content: data.reply };
 
       setMessages(prev => [...prev, aiMessage]);
-
-      setIsSpeaking(true);
-      setTimeout(() => setIsSpeaking(false), 3000);
+      speak(data.reply);
 
     } catch (error) {
       console.error("Error sending message:", error);
@@ -57,6 +86,10 @@ export default function App() {
   };
 
   const startRecording = async () => {
+    // Stop speaking when user wants to talk
+    Speech.stop();
+    setIsSpeaking(false);
+
     try {
       if (permissionResponse.status !== 'granted') {
         console.log('Requesting permission..');
@@ -121,9 +154,7 @@ export default function App() {
       const aiMessage = { role: 'ai', content: data.reply };
 
       setMessages(prev => [...prev, userMessage, aiMessage]);
-
-      setIsSpeaking(true);
-      setTimeout(() => setIsSpeaking(false), 3000);
+      speak(data.reply);
 
     } catch (error) {
       console.error("Error sending voice:", error);
@@ -135,6 +166,12 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={toggleMute} style={styles.muteButton}>
+           <Text style={styles.headerButtonText}>{isMuted ? '🔇 Unmute' : '🔊 Mute'}</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.sceneContainer}>
         <CompanionScene isSpeaking={isSpeaking} />
       </View>
@@ -179,6 +216,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
+  },
+  header: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+  },
+  muteButton: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 8,
+    borderRadius: 20,
+  },
+  headerButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
   sceneContainer: {
     flex: 1, // Takes up top half
