@@ -1,4 +1,5 @@
 # AI Companion App
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/d9b21a58-ff5a-4bd3-9031-22e766f85a49" />
 
 [한국어 버전] <옵션 1>의 변주곡
 Ver 1.1 [야성미 강조] "고개 숙이지 마라"
