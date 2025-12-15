@@ -3,12 +3,15 @@ import { StyleSheet, Text, View, TextInput, TouchableOpacity, KeyboardAvoidingVi
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import CompanionScene from './components/CompanionScene';
+import { saveToQueue, getQueue, removeFromQueue, isOnline } from './utils/OfflineManager';
+import { BACKEND_URL } from './config';
 
 export default function App() {
   const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [queueCount, setQueueCount] = useState(0);
 
   // Voice state
   const [recording, setRecording] = useState();
@@ -21,7 +24,14 @@ export default function App() {
     if (permissionResponse && permissionResponse.status !== 'granted') {
       requestPermission();
     }
+    // Check initial queue size
+    checkQueue();
   }, [permissionResponse]);
+
+  const checkQueue = async () => {
+    const queue = await getQueue();
+    setQueueCount(queue.length);
+  };
 
   const speak = (text) => {
     if (isMuted) return;
@@ -61,7 +71,7 @@ export default function App() {
     setIsLoading(true);
 
     try {
-      const backendUrl = 'http://localhost:3000/chat';
+      const backendUrl = `${BACKEND_URL}/chat`;
 
       const response = await fetch(backendUrl, {
         method: 'POST',
@@ -128,9 +138,32 @@ export default function App() {
   };
 
   const sendAudio = async (uri) => {
+    // Check connection
+    const online = await isOnline();
+    if (!online) {
+        console.log("Offline: Queueing audio");
+        await saveToQueue(uri);
+        await checkQueue();
+        setMessages(prev => [...prev, { role: 'system', content: 'Offline: Recording queued for sync.' }]);
+        return;
+    }
+
     setIsLoading(true);
     try {
-      const backendUrl = 'http://localhost:3000/voice';
+      await uploadAudioFile(uri);
+    } catch (error) {
+      console.error("Error sending voice:", error);
+      // Fallback to queue if upload fails
+      await saveToQueue(uri);
+      await checkQueue();
+      setMessages(prev => [...prev, { role: 'system', content: 'Upload failed. Queued for later.' }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const uploadAudioFile = async (uri) => {
+      const backendUrl = `${BACKEND_URL}/voice`;
 
       const formData = new FormData();
       formData.append('audio', {
@@ -147,6 +180,8 @@ export default function App() {
         body: formData,
       });
 
+      if (!response.ok) throw new Error("Upload failed");
+
       const data = await response.json();
 
       // Add user's transcribed text
@@ -155,13 +190,34 @@ export default function App() {
 
       setMessages(prev => [...prev, userMessage, aiMessage]);
       speak(data.reply);
+  };
 
-    } catch (error) {
-      console.error("Error sending voice:", error);
-      setMessages(prev => [...prev, { role: 'system', content: 'Error sending voice message.' }]);
-    } finally {
-      setIsLoading(false);
+  const syncQueue = async () => {
+    const queue = await getQueue();
+    if (queue.length === 0) return;
+
+    const online = await isOnline();
+    if (!online) {
+        setMessages(prev => [...prev, { role: 'system', content: 'Still offline. Cannot sync.' }]);
+        return;
     }
+
+    setMessages(prev => [...prev, { role: 'system', content: `Syncing ${queue.length} items...` }]);
+
+    // Process queue
+    let successCount = 0;
+    for (const item of queue) {
+        try {
+            await uploadAudioFile(item.uri);
+            await removeFromQueue(item.id);
+            successCount++;
+        } catch (e) {
+            console.error("Failed to sync item", item.id, e);
+        }
+    }
+
+    await checkQueue();
+    setMessages(prev => [...prev, { role: 'system', content: `Sync complete. Sent ${successCount} items.` }]);
   };
 
   return (
@@ -170,6 +226,11 @@ export default function App() {
         <TouchableOpacity onPress={toggleMute} style={styles.muteButton}>
            <Text style={styles.headerButtonText}>{isMuted ? '🔇 Unmute' : '🔊 Mute'}</Text>
         </TouchableOpacity>
+        {queueCount > 0 && (
+             <TouchableOpacity onPress={syncQueue} style={[styles.muteButton, { marginTop: 10, backgroundColor: 'orange' }]}>
+                <Text style={styles.headerButtonText}>🔄 Sync ({queueCount})</Text>
+             </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.sceneContainer}>
@@ -179,7 +240,7 @@ export default function App() {
       <View style={styles.chatContainer}>
         <View style={styles.messagesList}>
             {messages.map((msg, index) => (
-              <View key={index} style={[styles.messageBubble, msg.role === 'user' ? styles.userBubble : styles.aiBubble]}>
+              <View key={index} style={[styles.messageBubble, msg.role === 'user' ? styles.userBubble : styles.aiBubble, msg.role === 'system' && styles.systemBubble]}>
                 <Text style={styles.messageText}>{msg.content}</Text>
               </View>
             ))}
@@ -222,6 +283,7 @@ const styles = StyleSheet.create({
     top: 50,
     right: 20,
     zIndex: 10,
+    alignItems: 'flex-end',
   },
   muteButton: {
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -260,6 +322,10 @@ const styles = StyleSheet.create({
   aiBubble: {
     backgroundColor: '#e94560',
     alignSelf: 'flex-start',
+  },
+  systemBubble: {
+    backgroundColor: '#444',
+    alignSelf: 'center',
   },
   messageText: {
     color: '#fff',

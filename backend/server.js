@@ -3,15 +3,41 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const fs = require('fs');
+const path = require('path');
 const OpenAI = require('openai');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
 const PORT = process.env.PORT || 3000;
+console.log('Server running in:', __dirname);
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public'))); // Serve dashboard
+app.use('/training/audio', express.static(path.join(__dirname, 'training'))); // Serve audio files
+
+app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+// --- Training Data Helper ---
+const DB_PATH = path.join(__dirname, 'training', 'db.json');
+const TRAINING_DIR = path.join(__dirname, 'training');
+
+function loadDB() {
+  if (!fs.existsSync(DB_PATH)) return { items: [], config: { saveAudio: true } };
+  try {
+    return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  } catch (e) {
+    console.error("Error reading DB:", e);
+    return { items: [], config: { saveAudio: true } };
+  }
+}
+
+function saveDB(data) {
+  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+}
 
 // --- RAG Placeholder ---
 // In a real app, you would use a vector database (e.g., Pinecone, Weaviate) or a library like LangChain
@@ -99,6 +125,7 @@ app.post('/voice', upload.single('audio'), async (req, res) => {
   }
 
   const filePath = req.file.path;
+  let finalAudioPath = filePath;
 
   try {
     let transcription;
@@ -115,6 +142,33 @@ app.post('/voice', upload.single('audio'), async (req, res) => {
       transcription = "[MOCK] This is a simulated transcription of your voice.";
     }
 
+    // --- Training Data Logic ---
+    const db = loadDB();
+    if (db.config && db.config.saveAudio) {
+      const fileName = `rec_${Date.now()}.m4a`;
+      const targetPath = path.join(TRAINING_DIR, fileName);
+      fs.copyFileSync(filePath, targetPath);
+
+      db.items.push({
+        id: Date.now().toString(),
+        timestamp: Date.now(),
+        audioFile: fileName,
+        transcription: transcription,
+        verified: false
+      });
+      saveDB(db);
+    } else {
+      // Save just text if audio saving is off
+      db.items.push({
+        id: Date.now().toString(),
+        timestamp: Date.now(),
+        audioFile: null,
+        transcription: transcription,
+        verified: false
+      });
+      saveDB(db);
+    }
+
     // Process the transcribed text with Gemini
     const reply = await processTextChat(transcription);
 
@@ -124,16 +178,52 @@ app.post('/voice', upload.single('audio'), async (req, res) => {
     console.error("Error processing voice:", error);
     res.status(500).json({ error: 'Error processing voice input' });
   } finally {
-    // Clean up uploaded file
-    fs.unlink(filePath, (err) => {
-      if (err) console.error("Error deleting temp file:", err);
-    });
+    // Clean up uploaded file (from multer temp dir)
+    if (fs.existsSync(filePath)) {
+        fs.unlink(filePath, (err) => {
+        if (err) console.error("Error deleting temp file:", err);
+        });
+    }
   }
+});
+
+// --- Training API Endpoints ---
+
+app.get('/training/items', (req, res) => {
+    const db = loadDB();
+    res.json(db.items.sort((a,b) => b.timestamp - a.timestamp));
+});
+
+app.post('/training/update', (req, res) => {
+    const { id, transcription } = req.body;
+    const db = loadDB();
+    const item = db.items.find(i => i.id === id);
+    if (item) {
+        item.transcription = transcription;
+        item.verified = true;
+        saveDB(db);
+        res.json({ success: true });
+    } else {
+        res.status(404).json({ error: 'Item not found' });
+    }
+});
+
+app.get('/training/config', (req, res) => {
+    const db = loadDB();
+    res.json(db.config);
+});
+
+app.post('/training/config', (req, res) => {
+    const { saveAudio } = req.body;
+    const db = loadDB();
+    db.config.saveAudio = !!saveAudio;
+    saveDB(db);
+    res.json({ success: true });
 });
 
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`Dashboard available at http://localhost:${PORT}/dashboard.html`);
 });
 
-// Export for use if we were modularizing, but here we just keep it in one file for now.
 module.exports = { processTextChat };
