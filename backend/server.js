@@ -70,7 +70,9 @@ let model;
 
 if (API_KEY) {
   genAI = new GoogleGenerativeAI(API_KEY);
-  model = genAI.getGenerativeModel({ model: "gemini-pro"});
+  // Using gemini-2.0-flash-thinking-exp-01-21 as requested for Thinking Mode
+  // If not available, we might fallback, but explicit request calls for it.
+  model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-thinking-exp-01-21" });
 }
 
 // --- OpenAI Setup ---
@@ -93,6 +95,7 @@ async function processTextChat(message) {
       Companion:
     `;
 
+    // For Thinking models, we rely on their internal process.
     const result = await model.generateContent(prompt);
     const response = await result.response;
     reply = response.text();
@@ -115,7 +118,8 @@ app.post('/chat', async (req, res) => {
     res.json({ reply });
   } catch (error) {
     console.error("Error generating response:", error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    // Fallback if model doesn't exist or other error
+    res.status(500).json({ error: 'Internal Server Error', details: error.message });
   }
 });
 
@@ -132,9 +136,11 @@ app.post('/voice', upload.single('audio'), async (req, res) => {
 
     if (openai) {
       // Create a read stream from the uploaded file
+      // Prompt added for bilingual support (Korean + English)
       const transcriptionResponse = await openai.audio.transcriptions.create({
         file: fs.createReadStream(filePath),
         model: "whisper-1",
+        prompt: "The audio may contain both Korean and English."
       });
       transcription = transcriptionResponse.text;
     } else {
@@ -185,6 +191,33 @@ app.post('/voice', upload.single('audio'), async (req, res) => {
         });
     }
   }
+});
+
+// --- Text to Speech Endpoint ---
+app.post('/speak', async (req, res) => {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: 'Text required' });
+
+    try {
+        if (openai) {
+            const mp3 = await openai.audio.speech.create({
+                model: "tts-1",
+                voice: "alloy", // 'alloy', 'echo', 'fable', 'onyx', 'nova', and 'shimmer'
+                input: text,
+            });
+            const buffer = Buffer.from(await mp3.arrayBuffer());
+            // Return as base64 so frontend can play easily without saving file
+            const base64 = buffer.toString('base64');
+            res.json({ audioContent: base64 });
+        } else {
+             // Mock
+             console.warn("OPENAI_API_KEY missing for TTS.");
+             res.status(500).json({ error: "TTS Service Unavailable (Missing Key)" });
+        }
+    } catch (error) {
+        console.error("TTS Error:", error);
+        res.status(500).json({ error: "TTS Failed" });
+    }
 });
 
 // --- Training API Endpoints ---

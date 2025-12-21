@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, SafeAreaView } from 'react-native';
 import { Audio } from 'expo-av';
-import * as Speech from 'expo-speech';
 import CompanionScene from './components/CompanionScene';
 import { saveToQueue, getQueue, removeFromQueue, isOnline } from './utils/OfflineManager';
 import { BACKEND_URL } from './config';
@@ -19,6 +18,9 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
 
+  // Audio Playback
+  const [sound, setSound] = useState();
+
   useEffect(() => {
     // Request permissions on mount if not granted
     if (permissionResponse && permissionResponse.status !== 'granted') {
@@ -28,32 +30,72 @@ export default function App() {
     checkQueue();
   }, [permissionResponse]);
 
+  // Cleanup sound
+  useEffect(() => {
+    return sound
+      ? () => {
+          console.log('Unloading Sound');
+          sound.unloadAsync();
+        }
+      : undefined;
+  }, [sound]);
+
   const checkQueue = async () => {
     const queue = await getQueue();
     setQueueCount(queue.length);
   };
 
-  const speak = (text) => {
-    if (isMuted) return;
+  const playCustomVoice = async (text) => {
+    if (isMuted || !text) return;
 
-    // Stop previous speech
-    Speech.stop();
+    // Stop previous sound
+    if (sound) {
+        await sound.stopAsync();
+    }
 
-    Speech.speak(text, {
-      onStart: () => setIsSpeaking(true),
-      onDone: () => setIsSpeaking(false),
-      onStopped: () => setIsSpeaking(false),
-      onError: (err) => {
-        console.error("Speech error:", err);
+    try {
+        const response = await fetch(`${BACKEND_URL}/speak`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ text }),
+        });
+
+        const data = await response.json();
+        if (data.audioContent) {
+            // Play from base64
+            const uri = `data:audio/mp3;base64,${data.audioContent}`;
+            console.log('Loading Sound');
+            const { sound: newSound } = await Audio.Sound.createAsync(
+                { uri: uri },
+                { shouldPlay: true }
+            );
+            setSound(newSound);
+
+            setIsSpeaking(true);
+            newSound.setOnPlaybackStatusUpdate((status) => {
+                if (status.didJustFinish) {
+                    setIsSpeaking(false);
+                }
+            });
+        }
+    } catch (e) {
+        console.error("Failed to play custom voice", e);
         setIsSpeaking(false);
-      },
-    });
+    }
+  };
+
+  const stopPlayback = async () => {
+      if (sound) {
+          await sound.stopAsync();
+          setIsSpeaking(false);
+      }
   };
 
   const toggleMute = () => {
     if (!isMuted) {
-      Speech.stop();
-      setIsSpeaking(false);
+      stopPlayback();
     }
     setIsMuted(!isMuted);
   };
@@ -62,8 +104,7 @@ export default function App() {
     if (!inputText.trim()) return;
 
     // Stop speaking if the user interrupts
-    Speech.stop();
-    setIsSpeaking(false);
+    stopPlayback();
 
     const userMessage = { role: 'user', content: inputText };
     setMessages(prev => [...prev, userMessage]);
@@ -85,7 +126,7 @@ export default function App() {
       const aiMessage = { role: 'ai', content: data.reply };
 
       setMessages(prev => [...prev, aiMessage]);
-      speak(data.reply);
+      playCustomVoice(data.reply);
 
     } catch (error) {
       console.error("Error sending message:", error);
@@ -97,8 +138,7 @@ export default function App() {
 
   const startRecording = async () => {
     // Stop speaking when user wants to talk
-    Speech.stop();
-    setIsSpeaking(false);
+    stopPlayback();
 
     try {
       if (permissionResponse.status !== 'granted') {
@@ -189,7 +229,7 @@ export default function App() {
       const aiMessage = { role: 'ai', content: data.reply };
 
       setMessages(prev => [...prev, userMessage, aiMessage]);
-      speak(data.reply);
+      playCustomVoice(data.reply);
   };
 
   const syncQueue = async () => {
