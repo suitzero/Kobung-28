@@ -14,7 +14,10 @@
         .controls { margin-top: 5px; display: flex; gap: 10px; align-items: center; }
         button { padding: 5px 10px; cursor: pointer; }
         .saved { color: green; display: none; margin-left: 10px; }
-        .config-section { background: #e8f4fd; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .config-section { background: #e8f4fd; padding: 15px; border-radius: 5px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .drive-sync-btn { background-color: #0f9d58; color: white; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; }
+        .drive-sync-btn:hover { background-color: #0b8043; }
+        .uploaded-badge { background: #eee; color: #666; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; }
     </style>
 </head>
 <body>
@@ -27,8 +30,9 @@
         <div class="config-section">
             <label>
                 <input type="checkbox" id="saveAudioToggle" onchange="toggleSaveAudio()">
-                Save Audio for Training (Turn off when accuracy is perfect)
+                Save Audio for Training
             </label>
+            <button class="drive-sync-btn" onclick="syncToDrive()">Sync to Google Drive</button>
         </div>
 
         <div id="itemsList">Loading...</div>
@@ -50,6 +54,25 @@
             });
         }
 
+        async function syncToDrive() {
+            const btn = document.querySelector('.drive-sync-btn');
+            const originalText = btn.innerText;
+            btn.innerText = 'Syncing...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/training/sync-drive', { method: 'POST' });
+                const data = await res.json();
+                alert(data.message);
+                loadItems(); // Reload to show uploaded status
+            } catch (e) {
+                alert('Sync failed: ' + e.message);
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
+
         async function loadItems() {
             const res = await fetch('/training/items');
             const items = await res.json();
@@ -62,12 +85,16 @@
 
             container.innerHTML = items.map(item => `
                 <div class="item">
-                    <div><strong>ID:</strong> ${item.id} <small>(${new Date(item.timestamp).toLocaleString()})</small></div>
+                    <div>
+                        <strong>ID:</strong> ${item.id}
+                        <small>(${new Date(item.timestamp).toLocaleString()})</small>
+                        ${item.driveUploaded ? '<span class="uploaded-badge">Uploaded to Drive</span>' : ''}
+                    </div>
                     ${item.audioFile ? `
                         <audio controls src="/training/audio/${item.audioFile}" style="margin-top: 10px;"></audio>
                     ` : '<em>No Audio Saved</em>'}
                     <div>
-                        <textarea id="text-${item.id}">${item.transcription}</textarea>
+                        <textarea id="text-${item.id}">${item.transcription || ''}</textarea>
                     </div>
                     <div class="controls">
                         <button onclick="saveItem('${item.id}')">Save Correction</button>

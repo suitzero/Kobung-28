@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const OpenAI = require('openai');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const driveService = require('./services/drive');
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
@@ -252,6 +253,38 @@ app.post('/training/config', (req, res) => {
     db.config.saveAudio = !!saveAudio;
     saveDB(db);
     res.json({ success: true });
+});
+
+app.post('/training/sync-drive', async (req, res) => {
+    const db = loadDB();
+    const itemsToSync = db.items.filter(i => !i.driveUploaded && i.audioFile);
+
+    if (itemsToSync.length === 0) {
+        return res.json({ message: 'Nothing to sync' });
+    }
+
+    let syncedCount = 0;
+    for (const item of itemsToSync) {
+        try {
+            const audioPath = path.join(TRAINING_DIR, item.audioFile);
+            if (fs.existsSync(audioPath)) {
+                // Upload Audio
+                await driveService.uploadFile(audioPath, 'audio/mp4', item.audioFile); // m4a is mp4 container
+
+                // Upload Transcript
+                const txtName = item.audioFile.replace(/\.(m4a|mp4)$/, '.txt');
+                await driveService.uploadText(item.transcription || "", txtName);
+
+                item.driveUploaded = true;
+                syncedCount++;
+            }
+        } catch (error) {
+            console.error(`Failed to sync item ${item.id}:`, error);
+        }
+    }
+
+    saveDB(db);
+    res.json({ message: `Synced ${syncedCount} items to Drive` });
 });
 
 app.listen(PORT, () => {
