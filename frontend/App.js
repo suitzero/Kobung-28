@@ -3,7 +3,10 @@ import { StyleSheet, Text, View, TextInput, TouchableOpacity, KeyboardAvoidingVi
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import CompanionScene from './components/CompanionScene';
 import { saveToQueue, getQueue, removeFromQueue, isOnline } from './utils/OfflineManager';
-import { BACKEND_URL } from './config';
+import { BACKEND_URL, ENV_USE_STANDALONE_MODE } from './config';
+import { transcribeAudio } from './services/OpenAIService';
+import { chatWithGemini } from './services/GeminiService';
+import { saveTrainingData } from './utils/TrainingDataManager';
 
 export default function App() {
   const [inputText, setInputText] = useState('');
@@ -25,6 +28,7 @@ export default function App() {
 
   // Mock Mode
   const [isMockMode, setIsMockMode] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(ENV_USE_STANDALONE_MODE === 'true');
 
   // Audio Playback
   const [sound, setSound] = useState();
@@ -34,6 +38,17 @@ export default function App() {
     if (permissionResponse && permissionResponse.status !== 'granted') {
       requestPermission();
     }
+
+    // Configure audio session immediately to allow background music
+    Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+        interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+        shouldDuckAndroid: true,
+        staysActiveInBackground: true,
+    }).catch(err => console.error("Failed to set initial audio mode", err));
+
     // Check initial queue size
     checkQueue();
   }, [permissionResponse]);
@@ -138,25 +153,34 @@ export default function App() {
     }
 
     try {
-      const backendUrl = `${BACKEND_URL}/chat`;
+      let replyText;
 
-      const response = await fetch(backendUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: userMessage.content }),
-      });
+      if (isStandalone) {
+          // Direct API Call
+          const allMessages = [...messages, userMessage];
+          replyText = await chatWithGemini(allMessages);
+      } else {
+          // Backend Call
+          const backendUrl = `${BACKEND_URL}/chat`;
+          const response = await fetch(backendUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ message: userMessage.content }),
+          });
+          const data = await response.json();
+          replyText = data.reply;
+      }
 
-      const data = await response.json();
-      const aiMessage = { role: 'ai', content: data.reply };
+      const aiMessage = { role: 'ai', content: replyText };
 
       setMessages(prev => [...prev, aiMessage]);
-      playCustomVoice(data.reply);
+      playCustomVoice(replyText);
 
     } catch (error) {
       console.error("Error sending message:", error);
-      setMessages(prev => [...prev, { role: 'system', content: 'Error connecting to companion backend.' }]);
+      setMessages(prev => [...prev, { role: 'system', content: `Error: ${error.message}` }]);
     } finally {
       setIsLoading(false);
     }
@@ -310,11 +334,36 @@ export default function App() {
     }
 
     try {
-      await uploadAudioFile(uri);
+      if (isStandalone) {
+          // 1. Transcribe directly
+          const text = await transcribeAudio(uri);
+
+          // 2. Save for fine-tuning
+          await saveTrainingData(uri, text);
+
+          // 3. Continue chat flow
+          const userMessage = { role: 'user', content: `🎤 ${text}` };
+          setMessages(prev => [...prev, userMessage]);
+          setIsLoading(true);
+
+          // 4. Get AI Reply
+          const allMessages = [...messages, userMessage];
+          const replyText = await chatWithGemini(allMessages);
+
+          const aiMessage = { role: 'ai', content: replyText };
+          setMessages(prev => [...prev, aiMessage]);
+          playCustomVoice(replyText);
+
+      } else {
+          await uploadAudioFile(uri);
+      }
     } catch (error) {
       console.error("Error sending voice:", error);
-      // Fallback to queue if upload fails
-      await saveToQueue(uri);
+      if (!isStandalone) {
+         // Fallback to queue if upload fails (only relevant for backend mode usually)
+         await saveToQueue(uri);
+         await checkQueue();
+      }
       await checkQueue();
       setMessages(prev => [...prev, { role: 'system', content: 'Upload failed. Queued for later.' }]);
     } finally {
@@ -391,6 +440,15 @@ export default function App() {
                     onValueChange={setIsMockMode}
                     trackColor={{ false: "#767577", true: "#81b0ff" }}
                     thumbColor={isMockMode ? "#f5dd4b" : "#f4f3f4"}
+                />
+             </View>
+             <View style={styles.switchContainer}>
+                <Text style={styles.switchLabel}>Direct AI</Text>
+                <Switch
+                    value={isStandalone}
+                    onValueChange={setIsStandalone}
+                    trackColor={{ false: "#767577", true: "#81b0ff" }}
+                    thumbColor={isStandalone ? "#00ff00" : "#f4f3f4"}
                 />
              </View>
              <View style={styles.switchContainer}>
