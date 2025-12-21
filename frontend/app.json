@@ -29,6 +29,9 @@
       "ios",
       "android",
       "web"
+    ],
+    "plugins": [
+      "expo-asset"
     ]
   }
 }
