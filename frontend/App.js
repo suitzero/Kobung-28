@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, SafeAreaView } from 'react-native';
-import { Audio } from 'expo-av';
-import * as Speech from 'expo-speech';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, SafeAreaView, Switch } from 'react-native';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import CompanionScene from './components/CompanionScene';
 import { saveToQueue, getQueue, removeFromQueue, isOnline } from './utils/OfflineManager';
 import { BACKEND_URL } from './config';
@@ -19,6 +18,17 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
 
+  // Continuous Recording
+  const [isContinuous, setIsContinuous] = useState(false);
+  const continuousTimer = useRef(null);
+  const CHUNK_DURATION_MS = 30000; // 30 seconds
+
+  // Mock Mode
+  const [isMockMode, setIsMockMode] = useState(false);
+
+  // Audio Playback
+  const [sound, setSound] = useState();
+
   useEffect(() => {
     // Request permissions on mount if not granted
     if (permissionResponse && permissionResponse.status !== 'granted') {
@@ -28,32 +38,80 @@ export default function App() {
     checkQueue();
   }, [permissionResponse]);
 
+  // Cleanup sound
+  useEffect(() => {
+    return sound
+      ? () => {
+          console.log('Unloading Sound');
+          sound.unloadAsync();
+        }
+      : undefined;
+  }, [sound]);
+
   const checkQueue = async () => {
     const queue = await getQueue();
     setQueueCount(queue.length);
   };
 
-  const speak = (text) => {
-    if (isMuted) return;
+  const playCustomVoice = async (text) => {
+    if (isMuted || !text) return;
 
-    // Stop previous speech
-    Speech.stop();
+    // Stop previous sound
+    if (sound) {
+        await sound.stopAsync();
+    }
 
-    Speech.speak(text, {
-      onStart: () => setIsSpeaking(true),
-      onDone: () => setIsSpeaking(false),
-      onStopped: () => setIsSpeaking(false),
-      onError: (err) => {
-        console.error("Speech error:", err);
+    if (isMockMode) {
+      // In mock mode, just log it or simulate visual feedback
+      console.log("[MOCK] Playing audio for:", text);
+      setIsSpeaking(true);
+      setTimeout(() => setIsSpeaking(false), 2000);
+      return;
+    }
+
+    try {
+        const response = await fetch(`${BACKEND_URL}/speak`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ text }),
+        });
+
+        const data = await response.json();
+        if (data.audioContent) {
+            // Play from base64
+            const uri = `data:audio/mp3;base64,${data.audioContent}`;
+            console.log('Loading Sound');
+            const { sound: newSound } = await Audio.Sound.createAsync(
+                { uri: uri },
+                { shouldPlay: true }
+            );
+            setSound(newSound);
+
+            setIsSpeaking(true);
+            newSound.setOnPlaybackStatusUpdate((status) => {
+                if (status.didJustFinish) {
+                    setIsSpeaking(false);
+                }
+            });
+        }
+    } catch (e) {
+        console.error("Failed to play custom voice", e);
         setIsSpeaking(false);
-      },
-    });
+    }
+  };
+
+  const stopPlayback = async () => {
+      if (sound) {
+          await sound.stopAsync();
+          setIsSpeaking(false);
+      }
   };
 
   const toggleMute = () => {
     if (!isMuted) {
-      Speech.stop();
-      setIsSpeaking(false);
+      stopPlayback();
     }
     setIsMuted(!isMuted);
   };
@@ -62,13 +120,22 @@ export default function App() {
     if (!inputText.trim()) return;
 
     // Stop speaking if the user interrupts
-    Speech.stop();
-    setIsSpeaking(false);
+    stopPlayback();
 
     const userMessage = { role: 'user', content: inputText };
     setMessages(prev => [...prev, userMessage]);
     setInputText('');
     setIsLoading(true);
+
+    if (isMockMode) {
+      setTimeout(() => {
+        const mockReply = `[MOCK] I heard: "${userMessage.content}". This is a client-only response.`;
+        setMessages(prev => [...prev, { role: 'ai', content: mockReply }]);
+        playCustomVoice(mockReply);
+        setIsLoading(false);
+      }, 1000);
+      return;
+    }
 
     try {
       const backendUrl = `${BACKEND_URL}/chat`;
@@ -85,7 +152,7 @@ export default function App() {
       const aiMessage = { role: 'ai', content: data.reply };
 
       setMessages(prev => [...prev, aiMessage]);
-      speak(data.reply);
+      playCustomVoice(data.reply);
 
     } catch (error) {
       console.error("Error sending message:", error);
@@ -97,8 +164,7 @@ export default function App() {
 
   const startRecording = async () => {
     // Stop speaking when user wants to talk
-    Speech.stop();
-    setIsSpeaking(false);
+    stopPlayback();
 
     try {
       if (permissionResponse.status !== 'granted') {
@@ -106,9 +172,14 @@ export default function App() {
         await requestPermission();
       }
 
+      // Allow recording while music plays (MixWithOthers)
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
+        interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+        interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+        shouldDuckAndroid: true,
+        staysActiveInBackground: true,
       });
 
       console.log('Starting recording..');
@@ -118,23 +189,98 @@ export default function App() {
       setRecording(recording);
       setIsRecording(true);
       console.log('Recording started');
+
+      if (isContinuous) {
+          // If continuous mode is on, set a timer to stop and restart
+          if (continuousTimer.current) clearTimeout(continuousTimer.current);
+          continuousTimer.current = setTimeout(cycleRecording, CHUNK_DURATION_MS);
+      }
     } catch (err) {
       console.error('Failed to start recording', err);
     }
   };
 
-  const stopRecording = async () => {
+  // Helper to restart recording in continuous mode
+  const cycleRecording = async () => {
+      console.log("Cycling recording chunk...");
+      await stopRecording(true); // pass flag to indicate we are cycling
+      // Small delay to ensure clean state
+      setTimeout(startRecording, 500);
+  };
+
+  const stopRecording = async (isCycling = false) => {
     console.log('Stopping recording..');
-    setRecording(undefined);
-    setIsRecording(false);
+
+    // Clear timer if manually stopped or cycling
+    if (continuousTimer.current) {
+        clearTimeout(continuousTimer.current);
+        continuousTimer.current = null;
+    }
+
+    if (!isCycling) {
+        // Only turn off recording state if fully stopping
+        setIsRecording(false);
+    }
 
     if (!recording) return;
 
-    await recording.stopAndUnloadAsync();
-    const uri = recording.getURI();
-    console.log('Recording stopped and stored at', uri);
+    try {
+        await recording.stopAndUnloadAsync();
+        const uri = recording.getURI();
+        console.log('Recording stopped and stored at', uri);
+        setRecording(undefined);
+        sendAudio(uri);
+    } catch (e) {
+        console.error("Error stopping recording", e);
+    }
+  };
 
-    sendAudio(uri);
+  // We need to use a Ref for recording to handle the interval closure issue
+  const recordingRef = useRef(null);
+
+  // Redefine start/stop with Ref
+  const startRecordingRef = async () => {
+      stopPlayback();
+      try {
+        await Audio.setAudioModeAsync({
+            allowsRecordingIOS: true,
+            playsInSilentModeIOS: true,
+            interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+            interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+            shouldDuckAndroid: true,
+            staysActiveInBackground: true
+        });
+        const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+        recordingRef.current = recording;
+        setRecording(recording); // Keep state for UI
+        setIsRecording(true);
+
+        if (isContinuous) {
+            if (continuousTimer.current) clearTimeout(continuousTimer.current);
+            continuousTimer.current = setTimeout(cycleRecordingRef, CHUNK_DURATION_MS);
+        }
+      } catch (err) { console.error('Failed start', err); }
+  };
+
+  const stopRecordingRef = async (isCycling = false) => {
+      if (continuousTimer.current) { clearTimeout(continuousTimer.current); continuousTimer.current = null; }
+      if (!isCycling) setIsRecording(false);
+
+      if (recordingRef.current) {
+          try {
+              await recordingRef.current.stopAndUnloadAsync();
+              const uri = recordingRef.current.getURI();
+              recordingRef.current = null;
+              setRecording(undefined);
+              sendAudio(uri);
+          } catch(e) { console.error(e); }
+      }
+  };
+
+  const cycleRecordingRef = async () => {
+      if (!isContinuous) return; // Stop if user toggled off
+      await stopRecordingRef(true);
+      setTimeout(startRecordingRef, 200);
   };
 
   const sendAudio = async (uri) => {
@@ -149,6 +295,20 @@ export default function App() {
     }
 
     setIsLoading(true);
+
+    if (isMockMode) {
+      setTimeout(() => {
+        const mockTranscription = "This is a mock transcription of your voice.";
+        const mockReply = `[MOCK] I heard you say: "${mockTranscription}"`;
+        const userMessage = { role: 'user', content: `🎤 ${mockTranscription}` };
+        const aiMessage = { role: 'ai', content: mockReply };
+        setMessages(prev => [...prev, userMessage, aiMessage]);
+        playCustomVoice(mockReply);
+        setIsLoading(false);
+      }, 1500);
+      return;
+    }
+
     try {
       await uploadAudioFile(uri);
     } catch (error) {
@@ -189,7 +349,7 @@ export default function App() {
       const aiMessage = { role: 'ai', content: data.reply };
 
       setMessages(prev => [...prev, userMessage, aiMessage]);
-      speak(data.reply);
+      playCustomVoice(data.reply);
   };
 
   const syncQueue = async () => {
@@ -223,9 +383,31 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={toggleMute} style={styles.muteButton}>
-           <Text style={styles.headerButtonText}>{isMuted ? '🔇 Unmute' : '🔊 Mute'}</Text>
-        </TouchableOpacity>
+        <View style={styles.headerControls}>
+             <View style={styles.switchContainer}>
+                <Text style={styles.switchLabel}>Mock</Text>
+                <Switch
+                    value={isMockMode}
+                    onValueChange={setIsMockMode}
+                    trackColor={{ false: "#767577", true: "#81b0ff" }}
+                    thumbColor={isMockMode ? "#f5dd4b" : "#f4f3f4"}
+                />
+             </View>
+             <View style={styles.switchContainer}>
+                <Text style={styles.switchLabel}>Loop</Text>
+                <Switch
+                    value={isContinuous}
+                    onValueChange={(v) => {
+                        setIsContinuous(v);
+                        if (!v && isRecording) stopRecordingRef(); // Stop if turning off while running
+                    }}
+                />
+             </View>
+             <TouchableOpacity onPress={toggleMute} style={styles.muteButton}>
+                <Text style={styles.headerButtonText}>{isMuted ? '🔇' : '🔊'}</Text>
+             </TouchableOpacity>
+        </View>
+
         {queueCount > 0 && (
              <TouchableOpacity onPress={syncQueue} style={[styles.muteButton, { marginTop: 10, backgroundColor: 'orange' }]}>
                 <Text style={styles.headerButtonText}>🔄 Sync ({queueCount})</Text>
@@ -250,18 +432,25 @@ export default function App() {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.inputContainer}>
           <TouchableOpacity
             style={[styles.micButton, isRecording && styles.micButtonRecording]}
-            onPressIn={startRecording}
-            onPressOut={stopRecording}
+            onPressIn={() => { if(!isContinuous) startRecordingRef(); }}
+            onPressOut={() => { if(!isContinuous) stopRecordingRef(); }}
+            onPress={() => {
+                if (isContinuous) {
+                    // Toggle recording if continuous
+                    if (isRecording) stopRecordingRef();
+                    else startRecordingRef();
+                }
+            }}
             activeOpacity={0.7}
           >
-             <Text style={styles.micButtonText}>{isRecording ? '🔴' : '🎤'}</Text>
+             <Text style={styles.micButtonText}>{isRecording ? '🟥' : '🎤'}</Text>
           </TouchableOpacity>
 
           <TextInput
             style={styles.input}
             value={inputText}
             onChangeText={setInputText}
-            placeholder="Type or hold mic..."
+            placeholder={isContinuous ? "Tap mic to start/stop loop" : "Type or hold mic..."}
             placeholderTextColor="#999"
           />
           <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
@@ -284,6 +473,23 @@ const styles = StyleSheet.create({
     right: 20,
     zIndex: 10,
     alignItems: 'flex-end',
+  },
+  headerControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+  },
+  switchContainer: {
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      padding: 5,
+      borderRadius: 20,
+      flexDirection: 'row',
+      alignItems: 'center',
+  },
+  switchLabel: {
+      color: 'white',
+      marginRight: 5,
+      fontSize: 10,
   },
   muteButton: {
     backgroundColor: 'rgba(0,0,0,0.5)',
