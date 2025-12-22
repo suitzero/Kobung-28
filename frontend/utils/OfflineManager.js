@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import * as FileSystem from 'expo-file-system';
+import { Platform } from 'react-native';
 
 const QUEUE_KEY = 'offline_voice_queue';
 
@@ -9,16 +10,21 @@ export const saveToQueue = async (uri) => {
     const queueJson = await AsyncStorage.getItem(QUEUE_KEY);
     const queue = queueJson ? JSON.parse(queueJson) : [];
 
-    // Move file to permanent storage
-    const fileName = uri.split('/').pop();
-    const newPath = FileSystem.documentDirectory + fileName;
-    await FileSystem.moveAsync({
-      from: uri,
-      to: newPath
-    });
+    let savedUri = uri;
+
+    // Move file to permanent storage if not on web
+    if (Platform.OS !== 'web') {
+        const fileName = uri.split('/').pop();
+        const newPath = FileSystem.documentDirectory + fileName;
+        await FileSystem.moveAsync({
+          from: uri,
+          to: newPath
+        });
+        savedUri = newPath;
+    }
 
     queue.push({
-      uri: newPath,
+      uri: savedUri,
       timestamp: Date.now(),
       id: Date.now().toString()
     });
@@ -52,8 +58,12 @@ export const removeFromQueue = async (id) => {
     // However, if we remove from queue, we should probably delete the local file too
     // to save space, assuming it was uploaded.
     const item = queue.find(i => i.id === id);
-    if (item) {
-        await FileSystem.deleteAsync(item.uri, { idempotent: true });
+    if (item && Platform.OS !== 'web') {
+        try {
+           await FileSystem.deleteAsync(item.uri, { idempotent: true });
+        } catch (err) {
+            console.log("Error deleting file", err);
+        }
     }
 
     return updatedQueue.length;
@@ -66,8 +76,14 @@ export const clearQueue = async () => {
   try {
       const queue = await getQueue();
       // Delete all files
-      for (const item of queue) {
-          await FileSystem.deleteAsync(item.uri, { idempotent: true });
+      if (Platform.OS !== 'web') {
+          for (const item of queue) {
+              try {
+                await FileSystem.deleteAsync(item.uri, { idempotent: true });
+              } catch (err) {
+                 console.log("Error clearing file", err);
+              }
+          }
       }
       await AsyncStorage.removeItem(QUEUE_KEY);
   } catch (e) {

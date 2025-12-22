@@ -266,6 +266,16 @@ export default function App() {
   const startRecordingRef = async () => {
       stopPlayback();
       try {
+        // Ensure any previous recording is unloaded
+        if (recordingRef.current) {
+            try {
+                await recordingRef.current.stopAndUnloadAsync();
+            } catch (cleanupErr) {
+                console.log("Cleanup previous recording error", cleanupErr);
+            }
+            recordingRef.current = null;
+        }
+
         await Audio.setAudioModeAsync({
             allowsRecordingIOS: true,
             playsInSilentModeIOS: true,
