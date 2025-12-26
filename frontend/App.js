@@ -261,11 +261,25 @@ export default function App() {
 
   // We need to use a Ref for recording to handle the interval closure issue
   const recordingRef = useRef(null);
+  const isStartingRef = useRef(false);
 
   // Redefine start/stop with Ref
   const startRecordingRef = async () => {
+      if (isStartingRef.current) return;
+      isStartingRef.current = true;
+
       stopPlayback();
       try {
+        // Ensure any previous recording is unloaded
+        if (recordingRef.current) {
+            try {
+                await recordingRef.current.stopAndUnloadAsync();
+            } catch (cleanupErr) {
+                console.log("Cleanup previous recording error", cleanupErr);
+            }
+            recordingRef.current = null;
+        }
+
         await Audio.setAudioModeAsync({
             allowsRecordingIOS: true,
             playsInSilentModeIOS: true,
@@ -283,7 +297,11 @@ export default function App() {
             if (continuousTimer.current) clearTimeout(continuousTimer.current);
             continuousTimer.current = setTimeout(cycleRecordingRef, CHUNK_DURATION_MS);
         }
-      } catch (err) { console.error('Failed start', err); }
+      } catch (err) {
+          console.error('Failed start', err);
+      } finally {
+          isStartingRef.current = false;
+      }
   };
 
   const stopRecordingRef = async (isCycling = false) => {

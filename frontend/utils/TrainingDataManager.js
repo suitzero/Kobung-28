@@ -1,8 +1,10 @@
 import * as FileSystem from 'expo-file-system';
+import { Platform } from 'react-native';
 
 const TRAINING_DIR = FileSystem.documentDirectory + 'training_data/';
 
 const ensureDirectoryExists = async () => {
+    if (Platform.OS === 'web') return;
     const dirInfo = await FileSystem.getInfoAsync(TRAINING_DIR);
     if (!dirInfo.exists) {
         await FileSystem.makeDirectoryAsync(TRAINING_DIR, { intermediates: true });
@@ -10,6 +12,11 @@ const ensureDirectoryExists = async () => {
 };
 
 export const saveTrainingData = async (audioUri, transcription) => {
+    if (Platform.OS === 'web') {
+        console.log('[TrainingData] Skipping local save on web');
+        return { audioPath: audioUri, textPath: 'web-memory' };
+    }
+
     try {
         await ensureDirectoryExists();
 
@@ -42,6 +49,7 @@ export const saveTrainingData = async (audioUri, transcription) => {
 };
 
 export const getTrainingDataList = async () => {
+    if (Platform.OS === 'web') return [];
     try {
         await ensureDirectoryExists();
         const files = await FileSystem.readDirectoryAsync(TRAINING_DIR);
