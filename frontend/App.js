@@ -53,6 +53,29 @@ export default function App() {
     checkQueue();
   }, [permissionResponse]);
 
+  // Expose debugging tools to global window on Web
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+        window.AppDebug = {
+            transcribe: async (uri) => {
+                console.log('Debugging transcribe:', uri);
+                return await transcribeAudio(uri);
+            },
+            chat: async (msg) => {
+                console.log('Debugging chat:', msg);
+                const msgs = [{ role: 'user', content: msg }];
+                return await chatWithGemini(msgs);
+            },
+            recordStart: startRecordingRef,
+            recordStop: stopRecordingRef,
+            getState: () => ({ messages, isRecording, isStandalone, isMockMode }),
+            setStandalone: setIsStandalone,
+            setMock: setIsMockMode
+        };
+        console.log("AppDebug initialized. Use window.AppDebug to test functions.");
+    }
+  }, [messages, isRecording, isStandalone, isMockMode]);
+
   // Cleanup sound
   useEffect(() => {
     return sound
@@ -393,11 +416,17 @@ export default function App() {
       const backendUrl = `${BACKEND_URL}/voice`;
 
       const formData = new FormData();
-      formData.append('audio', {
-        uri: uri,
-        type: 'audio/m4a', // expo-av default is m4a
-        name: 'voice.m4a',
-      });
+      if (Platform.OS === 'web') {
+          const response = await fetch(uri);
+          const blob = await response.blob();
+          formData.append('audio', blob, 'voice.m4a');
+      } else {
+          formData.append('audio', {
+            uri: uri,
+            type: 'audio/m4a', // expo-av default is m4a
+            name: 'voice.m4a',
+          });
+      }
 
       const response = await fetch(backendUrl, {
         method: 'POST',
@@ -464,7 +493,10 @@ export default function App() {
                 <Text style={styles.switchLabel}>Direct AI</Text>
                 <Switch
                     value={isStandalone}
-                    onValueChange={setIsStandalone}
+                    onValueChange={(val) => {
+                        setIsStandalone(val);
+                        if (val) setIsMockMode(false); // Auto-disable mock if Standalone is on
+                    }}
                     trackColor={{ false: "#767577", true: "#81b0ff" }}
                     thumbColor={isStandalone ? "#00ff00" : "#f4f3f4"}
                 />

@@ -1,4 +1,5 @@
 import { ENV_OPENAI_API_KEY } from '../config';
+import { Platform } from 'react-native';
 
 export const transcribeAudio = async (uri) => {
   if (!ENV_OPENAI_API_KEY) {
@@ -6,11 +7,19 @@ export const transcribeAudio = async (uri) => {
   }
 
   const formData = new FormData();
-  formData.append('file', {
-    uri: uri,
-    type: 'audio/m4a', // expo-av default
-    name: 'voice.m4a',
-  });
+
+  if (Platform.OS === 'web') {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      formData.append('file', blob, 'voice.m4a');
+  } else {
+      formData.append('file', {
+        uri: uri,
+        type: 'audio/m4a', // expo-av default
+        name: 'voice.m4a',
+      });
+  }
+
   formData.append('model', 'whisper-1');
   formData.append('language', 'ko'); // Or auto-detect, but prompt mentioned supporting mixed Korean/English. OpenAI handles mix well, but hinting 'ko' or 'en' helps. Let's stick to default or make it configurable later. For now, no specific language param to allow mixed detection, or add prompt.
 
