@@ -92,6 +92,9 @@ export const clearQueue = async () => {
 };
 
 export const isOnline = async () => {
+  if (Platform.OS === 'web') {
+      return typeof navigator !== 'undefined' && 'onLine' in navigator ? navigator.onLine : true;
+  }
   const state = await NetInfo.fetch();
   return state.isConnected && state.isInternetReachable;
 };
