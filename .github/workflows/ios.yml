@@ -1,0 +1,39 @@
+name: iOS Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build iOS (TestFlight)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and Submit to TestFlight
+        # Requires EXPO_TOKEN and pre-configured EAS credentials (eas credentials:configure)
+        # Assuming TestFlight submission is configured via EAS Submit
+        run: eas build --platform ios --profile production --auto-submit --non-interactive --no-wait

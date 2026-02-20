@@ -4,8 +4,8 @@ import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import CompanionScene from './components/CompanionScene';
 import { saveToQueue, getQueue, removeFromQueue, isOnline } from './utils/OfflineManager';
 import { BACKEND_URL, ENV_USE_STANDALONE_MODE } from './config';
-import { transcribeAudio } from './services/OpenAIService';
-import { chatWithGemini } from './services/GeminiService';
+// import { transcribeAudio } from './services/OpenAIService'; // Removed
+import { chatWithGemini, transcribeAudio } from './services/GeminiService';
 import { saveTrainingData } from './utils/TrainingDataManager';
 
 export default function App() {
@@ -154,11 +154,13 @@ export default function App() {
 
     try {
       let replyText;
+      let debateLog = null;
 
       if (isStandalone) {
           // Direct API Call
           const allMessages = [...messages, userMessage];
           replyText = await chatWithGemini(allMessages);
+          // Standalone doesn't support debate log yet
       } else {
           // Backend Call
           const backendUrl = `${BACKEND_URL}/chat`;
@@ -171,9 +173,10 @@ export default function App() {
           });
           const data = await response.json();
           replyText = data.reply;
+          debateLog = data.debate;
       }
 
-      const aiMessage = { role: 'ai', content: replyText };
+      const aiMessage = { role: 'ai', content: replyText, debate: debateLog };
 
       setMessages(prev => [...prev, aiMessage]);
       playCustomVoice(replyText);
@@ -413,7 +416,7 @@ export default function App() {
 
       // Add user's transcribed text
       const userMessage = { role: 'user', content: `🎤 ${data.transcription}` };
-      const aiMessage = { role: 'ai', content: data.reply };
+      const aiMessage = { role: 'ai', content: data.reply, debate: data.debate };
 
       setMessages(prev => [...prev, userMessage, aiMessage]);
       playCustomVoice(data.reply);
@@ -500,6 +503,17 @@ export default function App() {
             {messages.map((msg, index) => (
               <View key={index} style={[styles.messageBubble, msg.role === 'user' ? styles.userBubble : styles.aiBubble, msg.role === 'system' && styles.systemBubble]}>
                 <Text style={styles.messageText}>{msg.content}</Text>
+                {msg.debate && msg.debate.length > 0 && (
+                    <View style={styles.debateContainer}>
+                        <Text style={styles.debateTitle}>Council Debate:</Text>
+                        {msg.debate.map((entry, i) => (
+                            <Text key={i} style={styles.debateText}>
+                                <Text style={styles.debateAgent}>{entry.agent}: </Text>
+                                {entry.content}
+                            </Text>
+                        ))}
+                    </View>
+                )}
               </View>
             ))}
             {isLoading && <Text style={styles.loadingText}>Companion is listening/thinking...</Text>}
@@ -611,6 +625,27 @@ const styles = StyleSheet.create({
   },
   messageText: {
     color: '#fff',
+  },
+  debateContainer: {
+    marginTop: 8,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    padding: 5,
+    borderRadius: 5,
+  },
+  debateTitle: {
+    color: '#ccc',
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginBottom: 3,
+  },
+  debateText: {
+    color: '#ddd',
+    fontSize: 10,
+    marginBottom: 2,
+  },
+  debateAgent: {
+    fontWeight: 'bold',
+    color: '#ffcc00',
   },
   loadingText: {
     color: '#ccc',
