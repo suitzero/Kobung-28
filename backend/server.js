@@ -7,6 +7,8 @@ const path = require('path');
 const OpenAI = require('openai');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const driveService = require('./services/drive');
+const geminiService = require('./services/gemini');
+const debateManager = require('./services/ai/DebateManager');
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
@@ -86,25 +88,14 @@ if (OPENAI_API_KEY) {
 async function processTextChat(message) {
   const context = retrieveContext(message);
 
-  let reply;
-  if (model) {
-    const prompt = `
-      You are a helpful 3D companion.
-      Context: ${context}
-
-      User: ${message}
-      Companion:
-    `;
-
-    // For Thinking models, we rely on their internal process.
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    reply = response.text();
-  } else {
-    console.warn("Gemini API Key not found. Using mock response.");
-    reply = `[MOCK] I received your message: "${message}". I don't have a real brain yet because the GEMINI_API_KEY is missing, but I know about: ${context || 'nothing related to this'}.`;
+  // Use Debate Manager
+  try {
+      const { essence, debateLog } = await debateManager.runDebate(message, context);
+      return { reply: essence, debate: debateLog };
+  } catch (e) {
+      console.error("Debate Manager failed:", e);
+      return { reply: "I'm having trouble consulting my internal advisors.", debate: [] };
   }
-  return reply;
 }
 
 app.post('/chat', async (req, res) => {
@@ -115,8 +106,8 @@ app.post('/chat', async (req, res) => {
   }
 
   try {
-    const reply = await processTextChat(message);
-    res.json({ reply });
+    const { reply, debate } = await processTextChat(message);
+    res.json({ reply, debate });
   } catch (error) {
     console.error("Error generating response:", error);
     // Fallback if model doesn't exist or other error
@@ -135,18 +126,13 @@ app.post('/voice', upload.single('audio'), async (req, res) => {
   try {
     let transcription;
 
-    if (openai) {
-      // Create a read stream from the uploaded file
-      // Prompt added for bilingual support (Korean + English)
-      const transcriptionResponse = await openai.audio.transcriptions.create({
-        file: fs.createReadStream(filePath),
-        model: "whisper-1",
-        prompt: "The audio may contain both Korean and English."
-      });
-      transcription = transcriptionResponse.text;
-    } else {
-      console.warn("OPENAI_API_KEY missing. Using mock transcription.");
-      transcription = "[MOCK] This is a simulated transcription of your voice.";
+    // Use Gemini for transcription instead of Whisper
+    try {
+        const mimeType = req.file.mimetype || 'audio/mp4';
+        transcription = await geminiService.transcribeAudio(filePath, mimeType);
+    } catch (transcribeError) {
+        console.error("Transcription failed:", transcribeError);
+        transcription = "[Error] Transcription failed.";
     }
 
     // --- Training Data Logic ---
@@ -177,9 +163,9 @@ app.post('/voice', upload.single('audio'), async (req, res) => {
     }
 
     // Process the transcribed text with Gemini
-    const reply = await processTextChat(transcription);
+    const { reply, debate } = await processTextChat(transcription);
 
-    res.json({ transcription, reply });
+    res.json({ transcription, reply, debate });
 
   } catch (error) {
     console.error("Error processing voice:", error);
