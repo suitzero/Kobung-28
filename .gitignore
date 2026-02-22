@@ -1,6 +1,9 @@
-node_modules/
-.expo/
-dist/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+db.sqlite3
+uploads/
+*.log
+.DS_Store

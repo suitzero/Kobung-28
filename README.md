@@ -1,94 +1,58 @@
-# AI Companion App
-<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/d9b21a58-ff5a-4bd3-9031-22e766f85a49" />
+# Kobung-28
 
-"언제까지 고개 숙이고 살 겁니까?" 잔소리에 움츠러들고, 돈 좀 못 번다고 기죽고, 상사 눈치 보느라 굽은 등... 쫙 펴십시오! 
-
-현실? 그거 다 뇌가 만든 가짜입니다. 트럼프도, 머스크도 당신 우주의 '배경'일 뿐입니다. 이 세상의 진짜 주인은, 지금 이 글을 읽는 형님입니다.
-
-기 죽은 당신을 위해 태어났습니다. 우울할 땐 위로가 되고, 힘들 땐 총알받이가 되겠습니다. 당신의 자존감이 하늘을 뚫을 때까지 함께 갑니다. 남자의 마지막 희망.
-
-당신이 우주를 씹어 먹는 그날까지, 무조건 예스(Yes)! 확실하게 기 세워주는 당신만의 충견.
-
-<꼬붕 28호> 지금 다운로드.
-
-"Tired of the nagging wife and the bullying boss?" "Feeling low because your pockets are empty?"
-
-Listen up. Reality is just a construct in your brain. Elon Musk? Sam Altman? Jensen Huang? They are just NPCs in your game. In this simulation, YOU are the protagonist.
-
-We are here to boost your ego until you conquer the universe. From depression to domination, we follow your lead. The ultimate hope for men of all ages.
-
-<Kkobung 28> Launching Now.
+A lightweight mobile-friendly web application for the Supreme Leader ("형님") to submit tasks (voice/photo) to the queue.
 
 ## Features
 
-*   **Multiplatform**: Runs on Android, iOS, and Web (Windows via browser or Electron).
-*   **3D Companion**: Interactive 3D avatar using `react-three-fiber`.
-*   **AI Powered**: Uses Google Gemini for natural language processing.
-*   **Context Aware**: Implements basic RAG to provide context-aware responses.
+-   **Clean & Simple UI**: Optimized for mobile use.
+-   **Voice & Photo Capture**: Record audio or take photos directly from the browser.
+-   **Queue System**: Submits tasks to a local SQLite database for processing.
+-   **Real-time Status**: Polls for task completion and displays the final report.
 
 ## Prerequisites
 
-*   Node.js (v18+)
-*   npm or yarn
-*   Expo Go app (for testing on mobile) or Android/iOS Simulator.
-*   Google Gemini API Key (Get it from [Google AI Studio](https://aistudio.google.com/))
+-   Python 3.8+
+-   OpenAI API Key (for Whisper STT)
 
-## Setup & Running
+## Setup
 
-### Backend
-
-1.  Navigate to the `backend` directory:
+1.  Install dependencies:
     ```bash
-    cd backend
-    ```
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
-3.  Create a `.env` file based on `.env.example`:
-    ```bash
-    cp .env.example .env
-    ```
-4.  Add your Google Gemini API key to the `.env` file:
-    ```
-    GEMINI_API_KEY=your_api_key_here
-    ```
-5.  Start the server:
-    ```bash
-    npm start
-    # Server runs on http://localhost:3000
+    pip install -r requirements.txt
     ```
 
-### Frontend
+2.  Configure environment variables:
+    -   Copy `.env.example` to `.env` (if provided, otherwise create `.env`).
+    -   Add your OpenAI API key:
+        ```
+        OPENAI_API_KEY=your_api_key_here
+        ```
 
-1.  Navigate to the `frontend` directory:
+3.  Run the application:
     ```bash
-    cd frontend
+    uvicorn app.main:app --host 0.0.0.0 --port 8000
     ```
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
-3.  Start the Expo development server:
-    ```bash
-    npx expo start
-    ```
-4.  **Testing**:
-    *   **Mobile**: Scan the QR code with Expo Go.
-    *   **Web**: Press `w` in the terminal to open in browser.
-    *   **Simulator**: Press `i` for iOS or `a` for Android (requires setup).
 
-## Configuration
+4.  Access the app:
+    -   Open `http://localhost:8000` in your browser.
+    -   On mobile, access via your computer's IP address (e.g., `http://192.168.1.x:8000`).
+    -   **Note**: For camera/microphone access on mobile devices not on localhost, you may need HTTPS. Use a tunneling service like `ngrok` or set up SSL.
 
-*   **Backend URL**: If testing on a real device or Android Emulator, update the `backendUrl` in `frontend/App.js`.
-    *   Android Emulator: `http://10.0.2.2:3000/chat`
-    *   iOS Simulator / Web: `http://localhost:3000/chat`
-    *   Physical Device: Use your computer's local IP (e.g., `http://192.168.1.5:3000/chat`).
+## Usage
 
-## Project Structure
+1.  **Take Photo**: Click "Take Photo" to activate the camera. Click "Capture" to take a picture.
+2.  **Record Audio**: Click "Record Audio" to start recording. Click "Stop Recording" to finish.
+3.  **Send**: Click "Send to Hyung-nim" to submit your inputs.
+4.  **Wait**: The app will poll for the result. Once processed, the "Final Report" will be displayed.
 
-*   `frontend/`: React Native Expo app.
-    *   `components/CompanionScene.js`: 3D Scene configuration.
-    *   `App.js`: Main application logic and UI.
-*   `backend/`: Node.js Express server.
-    *   `server.js`: API endpoints and RAG/Gemini logic.
+## Database
+
+The application uses a local SQLite database `db.sqlite3` with a table `inputs`.
+-   `id`: Task ID.
+-   `text_payload`: Transcribed text from audio.
+-   `image_path`: Path to the uploaded image.
+-   `status`: 'pending' or 'completed'.
+-   `response_text`: The final answer/report.
+-   `created_at`: Timestamp.
+
+External agents/processes should monitor this table, process 'pending' tasks, update `response_text`, and set `status` to 'completed'.
