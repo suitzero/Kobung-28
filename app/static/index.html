@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Kobung-28</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Kobung-28</h1>
+
+        <div class="controls">
+            <button id="cameraBtn">Take Photo</button>
+            <button id="recordBtn">Record Audio</button>
+            <button id="stopBtn" style="display:none;">Stop Recording</button>
+            <button id="submitBtn" disabled>Send to Hyung-nim</button>
+        </div>
+
+        <div id="preview">
+            <video id="cameraPreview" autoplay playsinline style="display:none;"></video>
+            <canvas id="canvas" style="display:none;"></canvas>
+            <img id="photoPreview" style="display:none;">
+            <audio id="audioPreview" controls style="display:none;"></audio>
+        </div>
+
+        <div id="status"></div>
+
+        <div id="response">
+            <h2>Final Report:</h2>
+            <div id="responseText"></div>
+        </div>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>
