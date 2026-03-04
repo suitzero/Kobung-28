@@ -1,0 +1,53 @@
+<div class="container">
+  <h1>Kobung 28: Voice Recorder & Transcriber</h1>
+
+  <div *ngIf="!hasApiKey()" class="card">
+    <h2>Enter Gemini API Key</h2>
+    <p>We need your Gemini API Key to transcribe audio.</p>
+    <div class="input-group">
+      <input type="password" [(ngModel)]="apiKeyInput" placeholder="AIzaSy..." />
+      <button (click)="saveApiKey()">Save</button>
+    </div>
+  </div>
+
+  <div *ngIf="hasApiKey()" class="card">
+    <div class="header">
+      <h2>Record Audio</h2>
+      <button class="small-btn" (click)="clearApiKey()">Clear API Key</button>
+    </div>
+
+    <div class="record-area">
+      <button class="record-btn" [class.recording]="isRecording()" (click)="toggleRecording()">
+        {{ isRecording() ? 'Stop Recording' : 'Start Recording' }}
+      </button>
+      <p *ngIf="isRecording()" class="recording-indicator">🔴 Recording...</p>
+    </div>
+  </div>
+
+  <div class="records-container">
+    <h2>Your Records</h2>
+    <div *ngIf="records().length === 0" class="empty-state">
+      No recordings yet.
+    </div>
+
+    <div *ngFor="let record of records()" class="record-card">
+      <div class="record-header">
+        <span class="timestamp">{{ record.timestamp | date:'short' }}</span>
+        <span class="location" *ngIf="record.location">
+          📍 {{ record.location.latitude | number:'1.2-2' }}, {{ record.location.longitude | number:'1.2-2' }}
+        </span>
+      </div>
+
+      <div class="audio-player">
+        <audio controls [src]="getAudioUrl(record.base64Audio)"></audio>
+      </div>
+
+      <div class="transcription-box">
+        <h4>Transcription:</h4>
+        <p [class.pending]="record.transcription === 'Transcribing...'">
+          {{ record.transcription || 'No transcription.' }}
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
