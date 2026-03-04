@@ -127,12 +127,23 @@ jobs:
       - name: Build iOS App (Archive)
         working-directory: ./ios/App
         run: |
+          PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
+
+          # Extract the UUID and TeamIdentifier from the provisioning profile
+          PP_UUID=$(security cms -D -i $PP_PATH | /usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin)
+          TEAM_ID=$(security cms -D -i $PP_PATH | /usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" /dev/stdin)
+
+          echo "Using Provisioning Profile UUID: $PP_UUID"
+          echo "Using Team ID: $TEAM_ID"
+
           xcodebuild archive \
             -project App.xcodeproj \
             -scheme App \
             -configuration Release \
             -archivePath $RUNNER_TEMP/App.xcarchive \
             -allowProvisioningUpdates \
+            PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
             CODE_SIGN_STYLE=Manual
 
       - name: Export IPA
