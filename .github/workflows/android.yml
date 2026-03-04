@@ -32,4 +32,6 @@ jobs:
 
       - name: Build Android
         # Builds for production (Play Store or APK depending on eas.json/config)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas build --platform android --profile production --non-interactive --no-wait

@@ -33,4 +33,6 @@ jobs:
       - name: Build and Submit to TestFlight
         # Requires EXPO_TOKEN and pre-configured EAS credentials (eas credentials:configure)
         # Assuming TestFlight submission is configured via EAS Submit
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas build --platform ios --profile production --auto-submit --non-interactive --no-wait
