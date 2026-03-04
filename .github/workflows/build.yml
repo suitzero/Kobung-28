@@ -35,7 +35,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: web-build
-          path: www/ # Note: Capacitor typically uses the 'www' directory or 'dist' based on angular.json, please adjust if it is different
+          path: dist/kobung-app/browser/
 
   build-android:
     needs: build-web
@@ -62,7 +62,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: web-build
-          path: www/
+          path: dist/kobung-app/browser/
 
       - name: Sync Capacitor Android
         run: npx cap sync android
@@ -90,7 +90,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: web-build
-          path: www/
+          path: dist/kobung-app/browser/
 
       - name: Sync Capacitor iOS
         run: npx cap sync ios
