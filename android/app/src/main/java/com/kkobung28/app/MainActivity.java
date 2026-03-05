@@ -1,4 +1,4 @@
-package com.kobung.app;
+package com.kkobung28.app;
 
 import com.getcapacitor.BridgeActivity;
 
