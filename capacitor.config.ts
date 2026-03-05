@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.kobung.app',
-  appName: 'kobung-app',
+  appId: 'com.kkobung28.app',
+  appName: 'Kkobong 28 app',
   webDir: 'dist/kobung-app/browser'
 };
 
