@@ -123,7 +123,7 @@ jobs:
           PP_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" $RUNNER_TEMP/profile.xml) || echo "Failed to extract UUID"
           echo "Extracted UUID: $PP_UUID"
 
-          xcodebuild -workspace App/App.xcworkspace \
+          xcodebuild -project App/App.xcodeproj \
             -scheme App \
             -sdk iphoneos \
             -configuration Release \
