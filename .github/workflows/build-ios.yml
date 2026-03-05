@@ -111,7 +111,17 @@ jobs:
         run: |
           cd ios
           PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
-          PP_UUID=$(security cms -D -i $PP_PATH | /usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin)
+
+          echo "DEBUG: Checking if Provisioning Profile exists..."
+          ls -l $PP_PATH
+          file $PP_PATH
+
+          echo "DEBUG: Extracting Profile XML..."
+          security cms -D -i $PP_PATH > $RUNNER_TEMP/profile.xml || echo "Failed to extract XML"
+
+          echo "DEBUG: Extracting UUID..."
+          PP_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" $RUNNER_TEMP/profile.xml) || echo "Failed to extract UUID"
+          echo "Extracted UUID: $PP_UUID"
 
           xcodebuild -workspace App/App.xcworkspace \
             -scheme App \
@@ -130,11 +140,21 @@ jobs:
         run: |
           cd ios
           PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
-          TEAM_ID=$(security cms -D -i $PP_PATH | /usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" /dev/stdin)
-          APP_ID_PREFIX=$(security cms -D -i $PP_PATH | /usr/libexec/PlistBuddy -c "Print :ApplicationIdentifierPrefix:0" /dev/stdin)
-          ENTITLEMENTS_APP_ID=$(security cms -D -i $PP_PATH | /usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" /dev/stdin)
+
+          echo "DEBUG: Extracting Profile XML for Export..."
+          security cms -D -i $PP_PATH > $RUNNER_TEMP/profile_export.xml || echo "Failed to extract XML"
+
+          TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" $RUNNER_TEMP/profile_export.xml)
+          APP_ID_PREFIX=$(/usr/libexec/PlistBuddy -c "Print :ApplicationIdentifierPrefix:0" $RUNNER_TEMP/profile_export.xml)
+          ENTITLEMENTS_APP_ID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" $RUNNER_TEMP/profile_export.xml)
           BUNDLE_ID=${ENTITLEMENTS_APP_ID#*.}
-          PP_NAME=$(security cms -D -i $PP_PATH | /usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin)
+          PP_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" $RUNNER_TEMP/profile_export.xml)
+
+          echo "DEBUG: Extracted TEAM_ID: $TEAM_ID"
+          echo "DEBUG: Extracted APP_ID_PREFIX: $APP_ID_PREFIX"
+          echo "DEBUG: Extracted ENTITLEMENTS_APP_ID: $ENTITLEMENTS_APP_ID"
+          echo "DEBUG: Extracted BUNDLE_ID: $BUNDLE_ID"
+          echo "DEBUG: Extracted PP_NAME: $PP_NAME"
 
           cat << EOF > App/exportOptions.plist
           <?xml version="1.0" encoding="UTF-8"?>
