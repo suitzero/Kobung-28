@@ -15,11 +15,8 @@ import { VoiceRecord } from './models/record.model';
   styleUrls: ['./app.css']
 })
 export class AppComponent {
-  apiKeyInput = signal('');
-
   isRecording = computed(() => this.recordingService.isRecording());
   records = computed(() => this.recordingService.records());
-  hasApiKey = computed(() => this.authService.hasApiKey());
 
   constructor(
     private authService: AuthService,
@@ -27,17 +24,6 @@ export class AppComponent {
     private geminiService: GeminiService,
     private sanitizer: DomSanitizer
   ) {}
-
-  saveApiKey() {
-    if (this.apiKeyInput().trim()) {
-      this.authService.setApiKey(this.apiKeyInput().trim());
-      this.apiKeyInput.set('');
-    }
-  }
-
-  clearApiKey() {
-    this.authService.clearApiKey();
-  }
 
   async toggleRecording() {
     if (this.isRecording()) {
@@ -51,7 +37,7 @@ export class AppComponent {
   }
 
   async transcribe(record: VoiceRecord) {
-    if (!this.hasApiKey()) return;
+    if (!this.authService.hasApiKey()) return;
 
     try {
       this.recordingService.updateTranscription(record.id, 'Transcribing...');
