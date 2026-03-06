@@ -36,20 +36,22 @@ export class RecordingService {
         await VoiceRecorder.requestAudioRecordingPermission();
       }
 
-      // Try to get location
-      try {
-        const position = await Geolocation.getCurrentPosition();
-        this.currentRecordLoc = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude
-        };
-      } catch (err) {
-        console.warn('Could not get location', err);
-        this.currentRecordLoc = null;
-      }
-
       await VoiceRecorder.startRecording();
       this.isRecording.set(true);
+
+      // Try to get location without blocking the recording start
+      Geolocation.getCurrentPosition({ timeout: 10000 })
+        .then(position => {
+          this.currentRecordLoc = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          };
+        })
+        .catch(err => {
+          console.warn('Could not get location', err);
+          this.currentRecordLoc = null;
+        });
+
     } catch (error) {
       console.error('Error starting recording', error);
       this.isRecording.set(false);
