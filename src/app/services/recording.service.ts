@@ -17,9 +17,13 @@ export class RecordingService {
   }
 
   async requestPermissions() {
-    const micPerms = await VoiceRecorder.requestAudioRecordingPermission();
-    if (!micPerms.value) {
-      console.warn("Microphone permission denied");
+    try {
+      const micPerms = await VoiceRecorder.requestAudioRecordingPermission();
+      if (!micPerms.value) {
+        console.warn("Microphone permission denied");
+      }
+    } catch (e) {
+      console.warn("Microphone permission error", e);
     }
 
     try {
@@ -31,12 +35,32 @@ export class RecordingService {
 
   async startRecording() {
     try {
-      const canRecord = await VoiceRecorder.hasAudioRecordingPermission();
-      if (!canRecord.value) {
-        await VoiceRecorder.requestAudioRecordingPermission();
+      try {
+        const deviceCanRecord = await VoiceRecorder.canDeviceVoiceRecord();
+        if (!deviceCanRecord.value) {
+          console.warn("Device cannot voice record");
+          alert("Your device or browser does not support voice recording.");
+          return;
+        }
+      } catch (e) {
+        console.warn("canDeviceVoiceRecord check failed", e);
+      }
+
+      try {
+        const canRecord = await VoiceRecorder.hasAudioRecordingPermission();
+        if (!canRecord.value) {
+          const requested = await VoiceRecorder.requestAudioRecordingPermission();
+          if (!requested.value) {
+            alert("Microphone permission is required to record audio.");
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("Permission check failed", e);
       }
 
       await VoiceRecorder.startRecording();
+      // Set to true after ensuring startRecording didn't throw
       this.isRecording.set(true);
 
       // Try to get location without blocking the recording start
@@ -54,6 +78,7 @@ export class RecordingService {
 
     } catch (error) {
       console.error('Error starting recording', error);
+      alert("Error starting recording: " + (error as any).message);
       this.isRecording.set(false);
     }
   }
@@ -68,7 +93,8 @@ export class RecordingService {
           id: Date.now().toString(),
           timestamp: new Date(),
           location: this.currentRecordLoc,
-          base64Audio: result.value.recordDataBase64
+          base64Audio: result.value.recordDataBase64,
+          mimeType: result.value.mimeType || 'audio/mp4' // save mimeType returned by capacitor
         };
 
         // Save to signal array
@@ -78,6 +104,7 @@ export class RecordingService {
       return null;
     } catch (error) {
       console.error('Error stopping recording', error);
+      alert("Error stopping recording: " + (error as any).message);
       this.isRecording.set(false);
       return null;
     }

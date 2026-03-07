@@ -6,5 +6,6 @@ export interface VoiceRecord {
     longitude: number;
   } | null;
   base64Audio: string;
+  mimeType?: string;
   transcription?: string;
 }
