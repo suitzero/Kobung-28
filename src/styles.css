@@ -1,1 +1,16 @@
 /* You can add global styles to this file, and also import other style files */
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #121212; /* Dark theme background */
+  color: #e0e0e0; /* Dark theme text color */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* Prevent zooming on double click and text selection highlighting */
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}

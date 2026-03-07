@@ -37,22 +37,26 @@ export class AppComponent {
   }
 
   async transcribe(record: VoiceRecord) {
-    if (!this.authService.hasApiKey()) return;
+    if (!this.authService.hasApiKey()) {
+      this.recordingService.updateTranscription(record.id, 'No Gemini API Key provided. Please add it to your environment.');
+      return;
+    }
 
     try {
       this.recordingService.updateTranscription(record.id, 'Transcribing...');
       // Capacitor Voice Recorder usually returns audio/wav or audio/m4a base64 data.
       // Often it's M4A on iOS and WAV/M4A on Android. We'll use audio/wav as a fallback.
-      const text = await this.geminiService.transcribeAudio(record.base64Audio, 'audio/mp4');
+      const text = await this.geminiService.transcribeAudio(record.base64Audio, record.mimeType || 'audio/mp4');
       this.recordingService.updateTranscription(record.id, text);
     } catch (e) {
-      this.recordingService.updateTranscription(record.id, 'Transcription Failed.');
+      this.recordingService.updateTranscription(record.id, 'Transcription Failed: ' + (e as any).message);
     }
   }
 
-  getAudioUrl(base64: string): SafeUrl {
+  getAudioUrl(record: VoiceRecord): SafeUrl {
     // Generate a data URL for the audio element
-    const prefix = 'data:audio/mp4;base64,';
-    return this.sanitizer.bypassSecurityTrustUrl(prefix + base64);
+    const mimeType = record.mimeType || 'audio/mp4';
+    const prefix = `data:${mimeType};base64,`;
+    return this.sanitizer.bypassSecurityTrustUrl(prefix + record.base64Audio);
   }
 }
