@@ -20,10 +20,11 @@
     "@capacitor/android": "^8.1.0",
     "@capacitor/cli": "^8.1.0",
     "@capacitor/core": "^8.1.0",
+    "@capacitor/filesystem": "^8.1.2",
     "@capacitor/geolocation": "^8.1.0",
     "@capacitor/ios": "^8.1.0",
+    "@capgo/capacitor-audio-recorder": "^8.0.12",
     "@google/generative-ai": "^0.24.1",
-    "capacitor-voice-recorder": "^7.0.6",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },
