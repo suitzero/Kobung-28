@@ -1,15 +1,14 @@
-# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+# Copy to terraform.tfvars and fill in (or just use ../deploy.sh, which
+# passes these as -var flags from .env instead). terraform.tfvars is
+# gitignored.
 
-project_id = "your-gcp-project-id"
-region     = "us-central1"
-zone       = "us-central1-a"
+vast_api_key = "your-vast-ai-api-key" # https://cloud.vast.ai/manage-keys/
 
-# Restrict access to yourself only, e.g. "203.0.113.4/32"
-allowed_ip = "0.0.0.0/32"
+hf_repo  = "apetersson/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128"
+hf_token = ""
 
-machine_type          = "a2-ultragpu-8g" # 8x A100 80GB
-tensor_parallel_size  = 8
-use_spot              = true
+api_key = "change-me-to-a-long-random-string"
 
-hf_token = "hf_xxx"
-api_key  = "change-me-to-a-long-random-string"
+gpu_name      = "A100_SXM4"
+num_gpus      = 2
+public_expose = false

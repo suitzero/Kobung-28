@@ -1,113 +1,150 @@
-# DeepSeek-V4-Flash (abliterated) — self-hosted on GCP
+# DeepSeek-V4-Flash (abliterated) — self-hosted on vast.ai
 
-Deploys [`cebeuq/DeepSeek-V4-Flash-0731-abliterated`](https://huggingface.co/cebeuq/DeepSeek-V4-Flash-0731-abliterated)
-— a 284B-parameter MoE checkpoint with refusal behavior removed — to a
-GPU VM on GCP, serving it with [vLLM](https://github.com/vllm-project/vllm)
-behind an OpenAI-compatible API. Infra is Terraform; `deploy.sh` drives it
-end to end from a filled-in `.env`.
+Rents the cheapest matching GPU offer on [vast.ai](https://vast.ai), and
+serves a **pre-quantized** GGUF build of
+[`cebeuq/DeepSeek-V4-Flash-0731-abliterated`](https://huggingface.co/cebeuq/DeepSeek-V4-Flash-0731-abliterated)
+— a 284B-parameter MoE checkpoint with refusal behavior removed — via
+[llama.cpp](https://github.com/ggml-org/llama.cpp)'s OpenAI-compatible API.
+Terraform drives the whole lifecycle; `deploy.sh` needs only your vast.ai
+API key to do everything else.
 
 **This model is uncensored.** It has had its safety refusal behavior
 deliberately stripped and will attempt requests a normal model would
-decline. The infra here defaults to locking the API down to your own IP
-plus a bearer API key — do not weaken that unless you understand the
-consequences of exposing it.
+decline. By default the API is **not** publicly exposed at all — it's only
+reachable through an SSH tunnel to your own machine. Don't set
+`PUBLIC_EXPOSE=true` unless you understand the consequences.
+
+## Why quantized, and why this specific repo
+
+The raw checkpoint is ~284GB even at native FP8. Quantizing it ourselves
+would mean first loading the full model (BF16 ≈ 568GB) somewhere just to
+calibrate a quantizer — an expensive job in its own right. The community
+already did this: **`apetersson/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128`**
+is a mixed-precision GGUF (MXFP4 for sensitive experts, lower-bit for the
+rest) that fits in ~110GB and is explicitly validated against llama.cpp.
+Using it instead of re-quantizing from scratch is both cheaper and faster
+to stand up. Alternatives, if you want to trade cost/quality differently:
+
+| Repo | Format | Size | Notes |
+|---|---|---|---|
+| `apetersson/...-DS4-Quality128` (default) | mixed GGUF | ~110GB | best quality at this size |
+| `apetersson/...-DS4-Headroom128` | mixed GGUF | ~110GB | more headroom for long context, slightly lower quality |
+| `mradermacher/DeepSeek-V4-Flash-0731-Abliterated-FP8-GGUF` (`Q4_K_S`) | standard GGUF | ~162GB | more conservative, standard quantization, needs more VRAM |
+| `mradermacher/...` (`Q2_K`) | standard GGUF | ~103GB | smallest, noticeably lower quality |
+
+Change `HF_REPO` in `.env` to switch; `HF_FILE_GLOB` selects which files to
+pull if a repo has multiple quant levels in one place (see the repo's
+"Files" tab on Hugging Face for exact filenames).
+
+## Why local-exec + the vastai CLI instead of a "real" provider
+
+There is no maintained official Terraform provider for vast.ai. The one
+community provider on the registry (`aalekhpatel07/vastai`) hasn't been
+published in years and doesn't cover offer search/rental. Rather than
+depend on that, `terraform/main.tf` wraps the **official, actively
+maintained `vastai` CLI** (`pip install vastai`) with `local-exec`
+provisioners — you still get `terraform apply` / `terraform destroy`, just
+backed by a tool that's actually kept in sync with vast.ai's API. The
+tradeoff: `terraform plan` can't show you a real diff of what will change
+on vast.ai's side (it's opaque to a `null_resource`), and the vast.ai API
+key ends up in `terraform.tfstate` (state is already gitignored — treat it
+as a secret).
 
 ## What gets created
 
-- A dedicated VPC + firewall rules that only allow SSH and the API port
-  from `allowed_ip`.
-- A GCE GPU instance (default: `a2-ultragpu-8g`, 8x A100 80GB) running
-  the GCP Deep Learning VM image (NVIDIA drivers/Docker preinstalled).
-- Your HF token and a generated API key, stored in Secret Manager (never
-  written to disk on the VM, never committed to git).
-- A startup script that downloads the model from Hugging Face and runs
-  `vllm/vllm-openai` with tensor parallelism across the GPUs, gated behind
-  the API key.
-- An auto-shutdown safety net (default 12h) so a forgotten instance
-  doesn't bill forever.
+- One rented vast.ai instance (`GPU_NAME` x `NUM_GPUS`, default 2x A100
+  80GB) booting a CUDA dev image.
+- An onstart script that downloads the GGUF model from Hugging Face,
+  builds `llama-server` from source (no docker-in-docker needed — vast.ai
+  containers don't reliably support that), and runs it bound to
+  `0.0.0.0:8000` gated by a bearer API key.
+- By default (`PUBLIC_EXPOSE=false`), the port is **not** mapped publicly
+  — you reach it only via SSH tunnel into the instance, which vast.ai
+  provides for every rental.
 
-## Cost — read this before deploying
+## Cost
 
-This is a 284B-parameter model; there is no cheap way to serve it, but
-spot pricing gets you most of the way there. Rough us-central1 numbers,
-verify current pricing before deploying:
+vast.ai pricing is a live marketplace — `deploy.sh` always rents whatever
+is currently cheapest that matches `GPU_NAME`/`NUM_GPUS`. Rough guide for
+the ~110GB default model (check current listings at
+https://cloud.vast.ai/create/ before deploying):
 
-| Machine type      | GPUs           | Spot $/hr (approx) | On-demand $/hr (approx) |
-|--------------------|----------------|---------------------|---------------------------|
-| `a2-ultragpu-8g`   | 8x A100 80GB   | ~$10-13             | ~$29+                     |
-| `a2-ultragpu-4g`   | 4x A100 80GB   | ~$5-7               | ~$15+                     |
-| `a3-highgpu-8g`    | 8x H100 80GB   | ~$16-22             | ~$60+                     |
+| GPUs | Total VRAM | Typical $/hr on vast.ai |
+|---|---|---|
+| 2x A100 80GB SXM (default) | 160GB | ~$1.50-2.50 |
+| 2x H100 80GB SXM | 160GB | ~$3-5 |
+| 3x RTX A6000 48GB | 144GB | ~$1-1.80 (cheaper, no NVLink but llama.cpp doesn't need it) |
+| 5x RTX 4090 24GB | 120GB | ~$1.20-2 (tight headroom for KV cache/context) |
 
-Spot instances can be reclaimed at any time and will **not** auto-restart
-(GCP disallows that combination) — use `scripts/restart_if_stopped.sh` to
-bring it back manually, or wire it to a cron. `USE_SPOT=false` in `.env`
-trades that off for guaranteed availability at ~3x the price.
-
-**Always run `./destroy.sh` when you're done.** The auto-shutdown net only
-stops the VM (compute billing stops, disk billing does not).
+This is a fraction of the equivalent hyperscaler cost, but it still bills
+per hour continuously. **Always run `./destroy.sh` when you're done.**
 
 ## Prerequisites
 
-1. `gcloud` CLI and `terraform` (>=1.5) installed locally.
-2. A GCP project with billing enabled: `gcloud auth login && gcloud auth application-default login`.
-3. **GPU quota.** GCP does not grant A100/H100 quota by default and this
-   cannot be automated — request it manually before deploying:
-   - Console → IAM & Admin → Quotas → filter for `NVIDIA A100 80GB GPUs`
-     (or `NVIDIA H100 GPUs`) in your target region → Edit Quotas.
-   - Approval can take anywhere from minutes to a few days.
-4. A Hugging Face access token with read access to the model:
-   https://huggingface.co/settings/tokens
+1. `terraform` (>=1.5) and `python3` installed locally.
+2. A vast.ai account with a payment method, and an API key from
+   https://cloud.vast.ai/manage-keys/.
+3. (Not required for the default `HF_REPO` — it's ungated.) A Hugging Face
+   token only if you point `HF_REPO` at a gated repo.
 
 ## Deploy
 
 ```bash
 cp .env.example .env
-# edit .env: set GCP_PROJECT_ID and HF_TOKEN at minimum.
-# VLLM_API_KEY and ALLOWED_IP are auto-generated/auto-detected if left blank.
+# edit .env: set VAST_API_KEY. Everything else has a working default.
 
 ./deploy.sh
 ```
 
-`deploy.sh` will print the server IP and generated API key. The instance
-then needs time to boot and download the model (multi-hundred GB) before
-it can answer queries:
+`deploy.sh` searches vast.ai for the cheapest matching offer, rents it,
+and prints the SSH tunnel command plus a generated `LLAMA_API_KEY`. The
+instance then needs time to download the ~110GB model and build
+llama.cpp before it can answer queries — this typically takes 10-30
+minutes depending on the host's bandwidth/CPU.
+
+Open a second terminal and run the printed `ssh_tunnel_command`, then:
 
 ```bash
-./scripts/healthcheck.sh <server_ip>
+./scripts/healthcheck.sh localhost 8000
 ```
 
 ## Query it
 
 ```bash
 pip install -r client/requirements.txt
-VLLM_HOST=<server_ip> VLLM_API_KEY=<key> python3 client/query.py "your prompt"
+LLAMA_HOST=localhost LLAMA_API_KEY=<key> python3 client/query.py "your prompt"
 ```
 
-or with curl (see `terraform output curl_example` for a filled-in version):
+or with curl, through the same SSH tunnel:
 
 ```bash
-curl http://<server_ip>:8000/v1/chat/completions \
+curl http://localhost:8000/v1/chat/completions \
   -H "Authorization: Bearer <key>" \
   -H "Content-Type: application/json" \
-  -d '{"model": "cebeuq/DeepSeek-V4-Flash-0731-abliterated", "messages": [{"role": "user", "content": "hello"}]}'
+  -d '{"messages": [{"role": "user", "content": "hello"}]}'
 ```
+
+If you set `PUBLIC_EXPOSE=true`, use the `public_ip`/`public_port`
+terraform outputs instead of `localhost`/the tunnel — see `deploy.sh`'s
+printed instructions.
 
 ## Troubleshooting
 
-- Run the printed `ssh_command` output (`terraform -chdir=terraform output -raw ssh_command`),
-  then `docker logs -f vllm-server` on the VM to watch model download / server startup.
-- If `boot_image` fails to find the image family, list current ones with
-  `gcloud compute images list --project deeplearning-platform-release --filter="family~common-cu"`
-  and set `boot_image` in `.env`/tfvars accordingly.
-- If the container OOMs on GPU memory, lower `MAX_MODEL_LEN` in `.env` and
-  redeploy, or scale up `MACHINE_TYPE`.
-- `TENSOR_PARALLEL_SIZE` must equal the GPU count implied by
-  `MACHINE_TYPE` (e.g. `a2-ultragpu-4g` → `4`).
+- SSH directly into the box (same host/port as `ssh_tunnel_command`, minus
+  `-L`) and `tail -f /workspace/llama-server.log`, or watch the onstart
+  script itself via `vastai logs <instance_id>`.
+- If `llama-server` OOMs on GPU memory, lower `CTX_SIZE` (context length)
+  in `terraform.tfvars`/`.env`, or scale up `NUM_GPUS`.
+- If `vastai search offers` finds nothing, your `GPU_NAME`/`NUM_GPUS`
+  combination may not be available right now — check
+  https://cloud.vast.ai/create/ for what's currently listed, or lower
+  `MIN_RELIABILITY`.
+- `terraform destroy` failing to find the instance usually means it was
+  already destroyed manually — delete `terraform/.vast_instance_id` and
+  re-run.
 
 ## Teardown
 
 ```bash
 ./destroy.sh
 ```
-
-Removes the VM, static IP, firewall rules, VPC and secrets.

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Polls the vLLM server's /v1/models endpoint until it responds, since the
-# first boot can take a long time (multi-hundred-GB model download + load).
+# Polls the llama.cpp server's /v1/models endpoint until it responds, since
+# the first boot can take a long time (model download + llama.cpp build).
+# Usage: scripts/healthcheck.sh localhost 8000   (after ssh_tunnel_command)
+#     or: scripts/healthcheck.sh <public_ip> <public_port>   (public_expose=true)
 set -euo pipefail
 
 if [ -z "${1:-}" ]; then

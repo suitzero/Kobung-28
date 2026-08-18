@@ -1,91 +1,83 @@
-variable "project_id" {
-  description = "GCP project ID to deploy into"
+variable "vast_api_key" {
+  description = "vast.ai API key (https://cloud.vast.ai/manage-keys/)"
   type        = string
+  sensitive   = true
 }
 
-variable "region" {
-  description = "GCP region"
+variable "hf_repo" {
+  description = "Hugging Face repo holding the pre-quantized GGUF weights to serve"
   type        = string
-  default     = "us-central1"
+  default     = "apetersson/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128"
 }
 
-variable "zone" {
-  description = "GCP zone (must have capacity/quota for the chosen machine_type)"
+variable "hf_file_glob" {
+  description = "Glob passed to `huggingface-cli download --include` to select which files to pull from hf_repo"
   type        = string
-  default     = "us-central1-a"
-}
-
-variable "allowed_ip" {
-  description = "CIDR (e.g. 1.2.3.4/32) allowed to reach SSH and the vLLM API. Keep this to your own IP."
-  type        = string
-}
-
-variable "machine_type" {
-  description = "GCE machine type. A2 ultragpu family bundles A100 80GB GPUs (1g/2g/4g/8g = GPU count). A3 highgpu family bundles H100 80GB GPUs."
-  type        = string
-  default     = "a2-ultragpu-8g"
-}
-
-variable "tensor_parallel_size" {
-  description = "vLLM --tensor-parallel-size. Must match the GPU count implied by machine_type."
-  type        = number
-  default     = 8
-}
-
-variable "use_spot" {
-  description = "Use Spot (preemptible) pricing. Much cheaper, but the VM can be reclaimed and will NOT auto-restart itself."
-  type        = bool
-  default     = true
-}
-
-variable "boot_disk_size_gb" {
-  description = "Boot disk size. Needs room for the model weights (~300GB+ for a 284B-param checkpoint) plus the vLLM container image."
-  type        = number
-  default     = 1024
-}
-
-variable "boot_disk_type" {
-  type    = string
-  default = "pd-ssd"
-}
-
-variable "boot_image" {
-  description = "Boot image. Defaults to a GCP Deep Learning VM image (drivers/Docker/NVIDIA toolkit preinstalled). Verify the family still exists before deploying: gcloud compute images list --project deeplearning-platform-release --filter=\"family~common-cu\""
-  type        = string
-  default     = "projects/deeplearning-platform-release/global/images/family/common-cu123-debian-11-py310"
-}
-
-variable "hf_model_id" {
-  description = "Hugging Face model repo to serve"
-  type        = string
-  default     = "cebeuq/DeepSeek-V4-Flash-0731-abliterated"
+  default     = "*.gguf"
 }
 
 variable "hf_token" {
-  description = "Hugging Face access token (needs read access to the model repo)"
+  description = "Optional Hugging Face token, only needed if hf_repo is gated"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "api_key" {
-  description = "Bearer API key clients must present to query the vLLM server"
+  description = "Bearer API key clients must present to query llama-server"
   type        = string
   sensitive   = true
 }
 
-variable "vllm_port" {
-  type    = number
-  default = 8000
+variable "gpu_name" {
+  description = "vast.ai gpu_name filter, e.g. A100_SXM4, H100_SXM, RTX_4090. Must total enough VRAM for the chosen quant (~110GB for the default DS4-Quality128 model) plus headroom for KV cache."
+  type        = string
+  default     = "A100_SXM4"
 }
 
-variable "max_model_len" {
-  description = "vLLM --max-model-len (context length). Lower this if you hit GPU memory limits."
+variable "num_gpus" {
+  description = "Number of GPUs to rent (must match gpu_name's availability on vast.ai)"
+  type        = number
+  default     = 2
+}
+
+variable "min_reliability" {
+  description = "Minimum vast.ai host reliability score (0-1) to consider when searching offers"
+  type        = number
+  default     = 0.95
+}
+
+variable "disk_gb" {
+  description = "Disk space to rent, needs to hold the GGUF model (~110GB+ for the default) plus the llama.cpp build"
+  type        = number
+  default     = 200
+}
+
+variable "base_image" {
+  description = "Docker image the vast.ai instance boots from. Needs apt + a C++ toolchain; llama.cpp is built from source inside onstart."
+  type        = string
+  default     = "nvidia/cuda:12.4.1-devel-ubuntu22.04"
+}
+
+variable "llama_cpp_ref" {
+  description = "git ref (branch/tag) of ggml-org/llama.cpp to build"
+  type        = string
+  default     = "master"
+}
+
+variable "ctx_size" {
+  description = "llama-server --ctx-size (context length)"
   type        = number
   default     = 8192
 }
 
-variable "auto_shutdown_minutes" {
-  description = "Safety net: the VM shuts itself down after this many minutes so an idle multi-GPU instance can't rack up cost unattended. Set to 0 to disable."
-  type        = number
-  default     = 720
+variable "public_expose" {
+  description = "If true, maps the API port to a public vast.ai host port (still gated by api_key). If false (default), the server only binds inside the instance and is reachable solely via SSH port-forward — recommended for a private, personal-use endpoint."
+  type        = bool
+  default     = false
+}
+
+variable "server_port" {
+  type    = number
+  default = 8000
 }
