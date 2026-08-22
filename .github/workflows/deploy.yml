@@ -1,0 +1,116 @@
+name: Deploy DeepSeek to vast.ai
+
+on:
+  workflow_dispatch:
+    inputs:
+      hf_repo:
+        description: "Pre-quantized GGUF repo to serve"
+        required: false
+        default: apetersson/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128
+      gpu_name:
+        description: "vast.ai gpu_name filter"
+        required: false
+        default: A100_SXM4
+      num_gpus:
+        description: "Number of GPUs to rent"
+        required: false
+        default: "2"
+      public_expose:
+        description: "Map the API port publicly (still gated by API key)? Leave false for SSH-tunnel-only access."
+        required: false
+        type: choice
+        options: ["false", "true"]
+        default: "false"
+
+concurrency:
+  group: vast-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install --user vastai
+
+      # Best-effort persistence of terraform state across runs (needed so a
+      # later "destroy" run knows which vast.ai instance to tear down). GitHub
+      # evicts cache entries unused for 7+ days — the destroy workflow also
+      # accepts a manual instance_id input as a fallback if this cache is gone.
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            terraform/terraform.tfstate
+            terraform/.vast_instance_id
+          key: vast-tfstate-${{ github.run_id }}
+          restore-keys: |
+            vast-tfstate-
+
+      - name: Generate LLAMA_API_KEY if not set as a secret
+        id: apikey
+        env:
+          LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
+        run: |
+          if [ -z "$LLAMA_API_KEY" ]; then
+            LLAMA_API_KEY=$(openssl rand -hex 32)
+            echo "::warning::LLAMA_API_KEY secret not set — generated a one-off key for this deploy. Set the LLAMA_API_KEY repository secret to keep a stable key across redeploys."
+          fi
+          echo "::add-mask::$LLAMA_API_KEY"
+          echo "key=$LLAMA_API_KEY" >> "$GITHUB_OUTPUT"
+
+      - name: terraform init
+        working-directory: terraform
+        run: terraform init -input=false
+
+      - name: terraform apply
+        working-directory: terraform
+        env:
+          TF_VAR_vast_api_key: ${{ secrets.VAST_API_KEY }}
+          TF_VAR_hf_token: ${{ secrets.HF_TOKEN }}
+          TF_VAR_api_key: ${{ steps.apikey.outputs.key }}
+          TF_VAR_hf_repo: ${{ inputs.hf_repo }}
+          TF_VAR_gpu_name: ${{ inputs.gpu_name }}
+          TF_VAR_num_gpus: ${{ inputs.num_gpus }}
+          TF_VAR_public_expose: ${{ inputs.public_expose }}
+        run: terraform apply -auto-approve
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: |
+            terraform/terraform.tfstate
+            terraform/.vast_instance_id
+          key: vast-tfstate-${{ github.run_id }}
+
+      - name: Summarize
+        working-directory: terraform
+        env:
+          LLAMA_API_KEY_SET_AS_SECRET: ${{ secrets.LLAMA_API_KEY != '' }}
+          GENERATED_KEY: ${{ steps.apikey.outputs.key }}
+        run: |
+          {
+            echo "## vast.ai deploy"
+            echo
+            echo '```'
+            terraform output
+            echo '```'
+            echo
+            echo "Save the instance id from \`terraform/.vast_instance_id\` (also cached) — pass it to the destroy workflow's \`instance_id\` input if the cache ever goes missing."
+            if [ "$LLAMA_API_KEY_SET_AS_SECRET" = "false" ]; then
+              echo
+              # Intentionally unmasked here: the job summary isn't covered by
+              # log masking, and this is the only place this one-off key is
+              # ever surfaced. Set the LLAMA_API_KEY repo secret to avoid
+              # this — the key will then stay stable across redeploys.
+              echo "LLAMA_API_KEY (generated for this run only): \`$GENERATED_KEY\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

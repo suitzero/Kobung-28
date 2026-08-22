@@ -1,0 +1,14 @@
+# Copy to terraform.tfvars and fill in (or just use ../deploy.sh, which
+# passes these as -var flags from .env instead). terraform.tfvars is
+# gitignored.
+
+vast_api_key = "your-vast-ai-api-key" # https://cloud.vast.ai/manage-keys/
+
+hf_repo  = "apetersson/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128"
+hf_token = ""
+
+api_key = "change-me-to-a-long-random-string"
+
+gpu_name      = "A100_SXM4"
+num_gpus      = 2
+public_expose = false
