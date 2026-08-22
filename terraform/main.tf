@@ -20,6 +20,7 @@ resource "null_resource" "vast_instance" {
     ctx_size        = var.ctx_size
     public_expose   = var.public_expose
     server_port     = var.server_port
+    https_port      = var.https_port
     # Not a secret (just a local path) — included so the destroy-time
     # provisioner below can reach it via `self`, since destroy provisioners
     # can only reference self/count.index/each.key, never other values.
@@ -43,6 +44,7 @@ resource "null_resource" "vast_instance" {
       CTX_SIZE              = var.ctx_size
       PUBLIC_EXPOSE         = var.public_expose
       SERVER_PORT           = var.server_port
+      HTTPS_PORT            = var.https_port
       AUTO_SHUTDOWN_MINUTES = var.auto_shutdown_minutes
       STATE_FILE            = local.state_file
     }
@@ -69,7 +71,10 @@ data "external" "vast_status" {
   # VAST_API_KEY intentionally omitted from query (query args are stored in
   # state); vast_status.sh reads it from its inherited process environment.
   query = {
-    state_file  = local.state_file
-    server_port = tostring(var.server_port)
+    state_file = local.state_file
+    # The publicly-mapped port to look up in vast.ai's port-mapping table.
+    # Only meaningful when public_expose = true (that's the only case
+    # anything gets mapped); harmless otherwise.
+    lookup_port = tostring(var.public_expose ? var.https_port : var.server_port)
   }
 }

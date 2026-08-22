@@ -6,7 +6,7 @@ set -euo pipefail
 
 INPUT=$(cat)
 STATE_FILE=$(python3 -c "import json,sys; print(json.load(sys.stdin)['state_file'])" <<<"$INPUT")
-SERVER_PORT=$(python3 -c "import json,sys; print(json.load(sys.stdin)['server_port'])" <<<"$INPUT")
+LOOKUP_PORT=$(python3 -c "import json,sys; print(json.load(sys.stdin)['lookup_port'])" <<<"$INPUT")
 
 : "${VAST_API_KEY:?VAST_API_KEY must be set in the environment terraform itself was run in}"
 
@@ -21,7 +21,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 RAW=$(vastai show instance "$INSTANCE_ID" --raw)
 
-python3 - "$RAW" "$SERVER_PORT" <<'PYEOF'
+python3 - "$RAW" "$LOOKUP_PORT" <<'PYEOF'
 import json, sys
 
 data = json.loads(sys.argv[1])

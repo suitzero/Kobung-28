@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSeek Query Console</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f8;
+    --panel: #ffffff;
+    --border: #ddd;
+    --text: #1a1a1a;
+    --muted: #666;
+    --accent: #7c3aed;
+    --accent-text: #ffffff;
+    --danger-bg: #fef2f2;
+    --danger-border: #fca5a5;
+    --danger-text: #7f1d1d;
+    --ok-bg: #f0fdf4;
+    --ok-border: #86efac;
+    --ok-text: #14532d;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16161a;
+      --panel: #202024;
+      --border: #33333a;
+      --text: #eaeaea;
+      --muted: #9a9aa2;
+      --accent: #a78bfa;
+      --accent-text: #1a1a1a;
+      --danger-bg: #2a1414;
+      --danger-border: #7f1d1d;
+      --danger-text: #fca5a5;
+      --ok-bg: #10241a;
+      --ok-border: #14532d;
+      --ok-text: #86efac;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px 64px;
+  }
+  main { width: 100%; max-width: 760px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 20px; }
+  .banner {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    margin-bottom: 16px;
+  }
+  .banner.warn { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-text); }
+  .banner.ok { background: var(--ok-bg); border-color: var(--ok-border); color: var(--ok-text); }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .row { display: flex; gap: 10px; margin-bottom: 10px; }
+  .row > div { flex: 1; }
+  label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 4px; }
+  input, textarea {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 0.9rem;
+    font-family: inherit;
+  }
+  input:focus, textarea:focus, button:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  textarea { resize: vertical; min-height: 90px; }
+  .actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+  button {
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    border-radius: 8px;
+    padding: 9px 18px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-weight: 500;
+  }
+  #status { font-size: 0.8rem; color: var(--muted); }
+  #output {
+    white-space: pre-wrap;
+    font-family: var(--mono);
+    font-size: 0.88rem;
+    line-height: 1.5;
+    min-height: 80px;
+  }
+  #output:empty::before { content: "Response will appear here."; color: var(--muted); font-family: inherit; }
+  details summary { cursor: pointer; font-size: 0.82rem; color: var(--muted); }
+  .footer-note { font-size: 0.78rem; color: var(--muted); margin-top: 20px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>DeepSeek Query Console</h1>
+  <p class="sub">Talks directly to your own self-hosted llama.cpp server on vast.ai — nothing is sent anywhere else.</p>
+
+  <div class="banner warn">
+    This model is <strong>uncensored</strong> (refusal behavior deliberately removed) and, once
+    <code>PUBLIC_EXPOSE=true</code>, is reachable by anyone who has the API key — vast.ai has no IP
+    allowlisting. Treat the key like a password; destroy the instance (<code>./destroy.sh</code> or the
+    Destroy workflow) when you're done testing.
+  </div>
+
+  <div id="endpointBanner" class="banner" style="display:none;"></div>
+
+  <div class="panel">
+    <div class="row">
+      <div>
+        <label for="host">Host</label>
+        <input id="host" placeholder="localhost or 123.45.67.89">
+      </div>
+      <div style="flex: 0 0 100px;">
+        <label for="port">Port</label>
+        <input id="port" placeholder="8000">
+      </div>
+      <div style="flex: 0 0 90px;">
+        <label for="scheme">Scheme</label>
+        <input id="scheme" placeholder="http">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="apiKey">API key</label>
+        <input id="apiKey" type="password" placeholder="LLAMA_API_KEY">
+      </div>
+    </div>
+    <p class="sub" style="margin: -4px 0 0;">
+      Saved only in this browser's local storage — never sent anywhere but the host above.
+    </p>
+  </div>
+
+  <div class="panel">
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" placeholder="Ask something...">Hello! What can you help me with?</textarea>
+    <div class="actions">
+      <button id="sendBtn">Send</button>
+      <button id="clearBtn" class="secondary" type="button">Clear output</button>
+      <span id="status"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <label>Response</label>
+    <div id="output"></div>
+  </div>
+
+  <details>
+    <summary>Trouble connecting?</summary>
+    <ul style="font-size: 0.85rem; color: var(--muted);">
+      <li><strong>Self-signed certificate warning:</strong> open <code>https://HOST:PORT/v1/models</code>
+        directly in a new tab first and click through the warning ("Proceed anyway" / "Visit site") —
+        the browser remembers that exception, then this page's requests will go through.</li>
+      <li><strong>Using the SSH tunnel instead of a public endpoint?</strong> set Host to
+        <code>localhost</code>, Port to <code>8000</code>, Scheme to <code>http</code>, and make sure the
+        <code>ssh_tunnel_command</code> from your deploy is still running in a terminal.</li>
+      <li><strong>401 Unauthorized:</strong> the API key doesn't match what the instance was deployed with.</li>
+      <li><strong>Nothing responds at all:</strong> the instance may still be downloading the model /
+        building llama.cpp on first boot — this can take 10-30 minutes.</li>
+    </ul>
+  </details>
+
+  <p class="footer-note">
+    Source: <a href="https://github.com/suitzero/Kobung-28" target="_blank" rel="noopener">suitzero/Kobung-28</a>
+  </p>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var LS_PREFIX = "deepseek-console:";
+  var fields = ["host", "port", "scheme", "apiKey"];
+
+  function load(key, fallback) {
+    try {
+      var v = localStorage.getItem(LS_PREFIX + key);
+      return v === null ? fallback : v;
+    } catch (e) { return fallback; }
+  }
+  function save(key, value) {
+    try { localStorage.setItem(LS_PREFIX + key, value); } catch (e) { /* private mode etc. */ }
+  }
+
+  var els = {};
+  fields.forEach(function (id) { els[id] = document.getElementById(id); });
+  els.prompt = document.getElementById("prompt");
+  els.output = document.getElementById("output");
+  els.status = document.getElementById("status");
+  els.sendBtn = document.getElementById("sendBtn");
+  els.clearBtn = document.getElementById("clearBtn");
+  els.endpointBanner = document.getElementById("endpointBanner");
+
+  els.host.value = load("host", "localhost");
+  els.port.value = load("port", "8000");
+  els.scheme.value = load("scheme", "http");
+  els.apiKey.value = load("apiKey", "");
+
+  fields.forEach(function (id) {
+    els[id].addEventListener("change", function () { save(id, els[id].value); });
+  });
+
+  // Best-effort autofill from docs/endpoint.json, written by the deploy
+  // workflow after each `terraform apply`. Never overrides a value you've
+  // already typed/saved — only fills in on first-ever visit.
+  fetch("./endpoint.json", { cache: "no-store" })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (!data) return;
+      var banner = els.endpointBanner;
+      if (data.status === "running" && data.public_expose && data.host && data.port) {
+        banner.className = "banner ok";
+        banner.style.display = "block";
+        banner.textContent = "Last deploy (" + (data.updated_at || "unknown time") +
+          "): public endpoint at " + data.host + ":" + data.port + ". Paste your API key below to use it.";
+        if (!load("host", null)) { els.host.value = data.host; save("host", data.host); }
+        if (!load("port", null)) { els.port.value = data.port; save("port", data.port); }
+        if (!load("scheme", null)) { els.scheme.value = "https"; save("scheme", "https"); }
+      } else if (data.status && data.status !== "running") {
+        banner.className = "banner warn";
+        banner.style.display = "block";
+        banner.textContent = "Last recorded deploy status: " + data.status +
+          ". No public endpoint is currently known — deploy with PUBLIC_EXPOSE=true, or use the SSH tunnel and set Host to localhost.";
+      }
+    })
+    .catch(function () { /* endpoint.json not present yet — fine, use manual fields */ });
+
+  function setStatus(text) { els.status.textContent = text; }
+
+  function baseUrl() {
+    var scheme = (els.scheme.value || "http").replace(/[^a-z]/gi, "") || "http";
+    var host = (els.host.value || "localhost").trim();
+    var port = (els.port.value || "8000").trim();
+    return scheme + "://" + host + ":" + port;
+  }
+
+  var inFlight = null;
+
+  els.clearBtn.addEventListener("click", function () {
+    els.output.textContent = "";
+    setStatus("");
+  });
+
+  els.sendBtn.addEventListener("click", function () {
+    if (inFlight) return;
+
+    var prompt = els.prompt.value.trim();
+    if (!prompt) return;
+    var apiKey = els.apiKey.value.trim();
+    if (!apiKey) { setStatus("Set an API key first."); return; }
+
+    els.output.textContent = "";
+    setStatus("Sending...");
+    els.sendBtn.disabled = true;
+
+    var controller = new AbortController();
+    inFlight = controller;
+
+    fetch(baseUrl() + "/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + apiKey
+      },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: prompt }],
+        stream: true
+      }),
+      signal: controller.signal
+    })
+      .then(function (resp) {
+        if (!resp.ok) {
+          return resp.text().then(function (t) {
+            throw new Error("HTTP " + resp.status + ": " + t.slice(0, 300));
+          });
+        }
+        setStatus("Streaming...");
+        var reader = resp.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = "";
+
+        function pump() {
+          return reader.read().then(function (result) {
+            if (result.done) { setStatus("Done."); return; }
+            buffer += decoder.decode(result.value, { stream: true });
+            var lines = buffer.split("\n");
+            buffer = lines.pop();
+            lines.forEach(function (line) {
+              line = line.trim();
+              if (!line.startsWith("data:")) return;
+              var payload = line.slice(5).trim();
+              if (payload === "[DONE]") return;
+              try {
+                var json = JSON.parse(payload);
+                var delta = json.choices && json.choices[0] && json.choices[0].delta;
+                var content = delta && delta.content;
+                if (content) els.output.textContent += content;
+              } catch (e) { /* ignore partial/non-JSON lines */ }
+            });
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(function (err) {
+        if (err.name === "AbortError") return;
+        setStatus("Error.");
+        els.output.textContent += "\n\n[error] " + err.message +
+          "\n\nSee \"Trouble connecting?\" below — this is usually a self-signed certificate " +
+          "that needs to be trusted once, a CORS/mixed-content issue, or a wrong host/port/key.";
+      })
+      .finally(function () {
+        inFlight = null;
+        els.sendBtn.disabled = false;
+      });
+  });
+})();
+</script>
+</body>
+</html>

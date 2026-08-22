@@ -72,14 +72,21 @@ variable "ctx_size" {
 }
 
 variable "public_expose" {
-  description = "If true, maps the API port to a public vast.ai host port (still gated by api_key). If false (default), the server only binds inside the instance and is reachable solely via SSH port-forward — recommended for a private, personal-use endpoint."
+  description = "If true, maps an HTTPS (self-signed) port to a public vast.ai host port via Caddy, gated by api_key — needed for the GitHub Pages web console, since a browser can't be pointed at an SSH tunnel. If false (default), llama-server only binds inside the instance and is reachable solely via SSH port-forward — recommended for a private, personal-use endpoint."
   type        = bool
   default     = false
 }
 
 variable "server_port" {
-  type    = number
-  default = 8000
+  description = "Port llama-server binds to (127.0.0.1 only, never mapped publicly)"
+  type        = number
+  default     = 8000
+}
+
+variable "https_port" {
+  description = "Public HTTPS port (self-signed cert via Caddy) when public_expose = true. Unused otherwise."
+  type        = number
+  default     = 8443
 }
 
 variable "auto_shutdown_minutes" {
