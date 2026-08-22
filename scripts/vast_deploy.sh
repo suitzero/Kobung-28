@@ -23,6 +23,7 @@ HF_FILE_GLOB="${HF_FILE_GLOB:-*.gguf}"
 HF_TOKEN="${HF_TOKEN:-}"
 PUBLIC_EXPOSE="${PUBLIC_EXPOSE:-false}"
 SERVER_PORT="${SERVER_PORT:-8000}"
+AUTO_SHUTDOWN_MINUTES="${AUTO_SHUTDOWN_MINUTES:-720}"
 
 if [ -f "$STATE_FILE" ]; then
   echo "Instance already recorded at $STATE_FILE ($(cat "$STATE_FILE")), skipping create."
@@ -49,7 +50,7 @@ echo "Cheapest matching offer: $OFFER_ID" >&2
 ONSTART_SCRIPT=$(cat <<SCRIPT
 set -e
 apt-get update -qq && apt-get install -y -qq python3-pip git cmake build-essential ninja-build >/dev/null
-pip3 install -q -U "huggingface_hub[hf_transfer]"
+pip3 install -q -U "huggingface_hub[hf_transfer]" vastai
 export HF_HUB_ENABLE_HF_TRANSFER=1
 mkdir -p /workspace/models
 $( [ -n "$HF_TOKEN" ] && echo "huggingface-cli login --token '$HF_TOKEN' --add-to-git-credential" )
@@ -77,6 +78,14 @@ nohup /workspace/llama.cpp/build/bin/llama-server \
   -ngl 999 \
   -c ${CTX_SIZE} \
   > /workspace/llama-server.log 2>&1 &
+
+# Safety net: self-stop after AUTO_SHUTDOWN_MINUTES so a forgotten rental
+# doesn't bill unattended forever. CONTAINER_ID/CONTAINER_API_KEY are
+# injected into every vast.ai instance automatically.
+if [ "${AUTO_SHUTDOWN_MINUTES}" -gt 0 ]; then
+  ( sleep $((AUTO_SHUTDOWN_MINUTES * 60)) && vastai stop instance \$CONTAINER_ID --api-key \$CONTAINER_API_KEY ) \
+    > /workspace/auto-shutdown.log 2>&1 &
+fi
 SCRIPT
 )
 

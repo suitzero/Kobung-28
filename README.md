@@ -46,9 +46,13 @@ maintained `vastai` CLI** (`pip install vastai`) with `local-exec`
 provisioners — you still get `terraform apply` / `terraform destroy`, just
 backed by a tool that's actually kept in sync with vast.ai's API. The
 tradeoff: `terraform plan` can't show you a real diff of what will change
-on vast.ai's side (it's opaque to a `null_resource`), and the vast.ai API
-key ends up in `terraform.tfstate` (state is already gitignored — treat it
-as a secret).
+on vast.ai's side (it's opaque to a `null_resource`). Secrets are kept out
+of `null_resource.triggers` on purpose (that map does get written to
+`terraform.tfstate`) — they only ever flow through provisioner
+`environment` blocks or process-environment inheritance, so
+`terraform.tfstate` doesn't contain them. `terraform.tfstate` is still
+gitignored regardless, since it does record your config (GPU choice, repo,
+etc).
 
 ## What gets created
 
@@ -61,6 +65,9 @@ as a secret).
 - By default (`PUBLIC_EXPOSE=false`), the port is **not** mapped publicly
   — you reach it only via SSH tunnel into the instance, which vast.ai
   provides for every rental.
+- A self-stop safety net: the instance stops itself after
+  `AUTO_SHUTDOWN_MINUTES` (default 12h) via vast.ai's own API, in case you
+  forget to tear it down.
 
 ## Cost
 
@@ -77,7 +84,10 @@ https://cloud.vast.ai/create/ before deploying):
 | 5x RTX 4090 24GB | 120GB | ~$1.20-2 (tight headroom for KV cache/context) |
 
 This is a fraction of the equivalent hyperscaler cost, but it still bills
-per hour continuously. **Always run `./destroy.sh` when you're done.**
+per hour continuously. **Always run `./destroy.sh` when you're done** — the
+auto-shutdown safety net only *stops* the instance (GPU billing stops, but
+disk storage billing doesn't); `destroy.sh` fully terminates and releases
+it.
 
 ## Prerequisites
 
@@ -107,6 +117,33 @@ Open a second terminal and run the printed `ssh_tunnel_command`, then:
 ```bash
 ./scripts/healthcheck.sh localhost 8000
 ```
+
+## Deploy from GitHub Actions instead
+
+You don't need a local machine at all — `.github/workflows/deploy.yml` and
+`destroy.yml` do the same thing as `deploy.sh`/`destroy.sh`, triggered from
+the Actions tab.
+
+1. Repo → **Settings → Secrets and variables → Actions → New repository secret**:
+   - `VAST_API_KEY` (required)
+   - `HF_TOKEN` (optional — only if `HF_REPO` is gated)
+   - `LLAMA_API_KEY` (optional but recommended — without it, a new random
+     key is generated on every deploy run and shown once in that run's job
+     summary; setting it yourself keeps the same key across redeploys)
+2. Actions tab → **Deploy DeepSeek to vast.ai** → **Run workflow**. Adjust
+   `hf_repo`/`gpu_name`/`num_gpus`/`public_expose` if you want something
+   other than the defaults.
+3. When it finishes, open the run's **Summary** for the `ssh_tunnel_command`
+   (or public IP/port if `public_expose=true`) and the API key if one was
+   generated for you.
+4. When done, Actions tab → **Destroy vast.ai instance** → **Run workflow**.
+
+Terraform state is cached between runs (`actions/cache`) so the destroy
+workflow can find the instance the deploy workflow created. GitHub evicts
+cache entries unused for 7+ days — if a destroy run reports it can't find
+cached state, check https://cloud.vast.ai/instances/ for the running
+instance's id and re-run the destroy workflow with that id in the
+`instance_id` input; it'll tear it down directly, bypassing terraform.
 
 ## Query it
 

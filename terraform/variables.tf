@@ -81,3 +81,9 @@ variable "server_port" {
   type    = number
   default = 8000
 }
+
+variable "auto_shutdown_minutes" {
+  description = "Safety net: the instance self-stops after this many minutes so a forgotten rental can't bill unattended forever. Set to 0 to disable."
+  type        = number
+  default     = 720
+}

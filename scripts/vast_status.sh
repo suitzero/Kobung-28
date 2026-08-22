@@ -5,11 +5,10 @@
 set -euo pipefail
 
 INPUT=$(cat)
-VAST_API_KEY=$(python3 -c "import json,sys; print(json.load(sys.stdin)['vast_api_key'])" <<<"$INPUT")
 STATE_FILE=$(python3 -c "import json,sys; print(json.load(sys.stdin)['state_file'])" <<<"$INPUT")
 SERVER_PORT=$(python3 -c "import json,sys; print(json.load(sys.stdin)['server_port'])" <<<"$INPUT")
 
-export VAST_API_KEY
+: "${VAST_API_KEY:?VAST_API_KEY must be set in the environment terraform itself was run in}"
 
 if [ ! -f "$STATE_FILE" ]; then
   echo '{"status": "not_created", "public_ip": "", "public_port": "", "ssh_host": "", "ssh_port": ""}'
