@@ -12,6 +12,9 @@ concurrency:
   group: vast-deploy
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   destroy:
     runs-on: ubuntu-latest
@@ -70,3 +73,25 @@ jobs:
             terraform/terraform.tfstate
             terraform/.vast_instance_id
           key: vast-tfstate-${{ github.run_id }}
+
+      - name: Mark web console endpoint inactive
+        if: success()
+        run: |
+          cat > docs/endpoint.json <<JSON
+          {
+            "status": "destroyed",
+            "public_expose": false,
+            "host": "",
+            "port": "",
+            "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          JSON
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/endpoint.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Mark web console endpoint inactive [skip ci]"
+            git push
+          else
+            echo "docs/endpoint.json unchanged"
+          fi

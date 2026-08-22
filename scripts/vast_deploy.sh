@@ -23,6 +23,7 @@ HF_FILE_GLOB="${HF_FILE_GLOB:-*.gguf}"
 HF_TOKEN="${HF_TOKEN:-}"
 PUBLIC_EXPOSE="${PUBLIC_EXPOSE:-false}"
 SERVER_PORT="${SERVER_PORT:-8000}"
+HTTPS_PORT="${HTTPS_PORT:-8443}"
 AUTO_SHUTDOWN_MINUTES="${AUTO_SHUTDOWN_MINUTES:-720}"
 
 if [ -f "$STATE_FILE" ]; then
@@ -72,12 +73,32 @@ fi
 
 nohup /workspace/llama.cpp/build/bin/llama-server \
   -m "\$MODEL_FILE" \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --port ${SERVER_PORT} \
   --api-key '${API_KEY}' \
   -ngl 999 \
   -c ${CTX_SIZE} \
   > /workspace/llama-server.log 2>&1 &
+
+$( [ "$PUBLIC_EXPOSE" = "true" ] && cat <<CADDYBLOCK
+# llama-server only binds localhost; Caddy terminates HTTPS on the publicly
+# mapped port so a GitHub Pages (https) page can fetch it without the
+# browser blocking it as mixed content. First visit to the instance's
+# https URL needs a manual "proceed anyway" past the self-signed cert
+# warning — after that the browser remembers the exception.
+apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https gnupg >/dev/null
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+apt-get update -qq && apt-get install -y -qq caddy >/dev/null
+cat > /etc/caddy/Caddyfile <<CADDYFILE
+:${HTTPS_PORT} {
+    tls internal
+    reverse_proxy 127.0.0.1:${SERVER_PORT}
+}
+CADDYFILE
+nohup caddy run --config /etc/caddy/Caddyfile --adapter caddyfile > /workspace/caddy.log 2>&1 &
+CADDYBLOCK
+)
 
 # Safety net: self-stop after AUTO_SHUTDOWN_MINUTES so a forgotten rental
 # doesn't bill unattended forever. CONTAINER_ID/CONTAINER_API_KEY are
@@ -91,7 +112,9 @@ SCRIPT
 
 CREATE_ARGS=(vastai create instance "$OFFER_ID" --image "$BASE_IMAGE" --disk "$DISK_GB" --onstart-cmd "$ONSTART_SCRIPT" --ssh --direct --raw)
 if [ "$PUBLIC_EXPOSE" = "true" ]; then
-  CREATE_ARGS+=(--env "-p ${SERVER_PORT}:${SERVER_PORT}")
+  # Only the HTTPS (Caddy) port is mapped publicly — llama-server itself
+  # binds 127.0.0.1 only, reachable solely via this proxy or the SSH tunnel.
+  CREATE_ARGS+=(--env "-p ${HTTPS_PORT}:${HTTPS_PORT}")
 fi
 
 echo "Renting instance..." >&2

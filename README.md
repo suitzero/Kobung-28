@@ -61,10 +61,15 @@ etc).
 - An onstart script that downloads the GGUF model from Hugging Face,
   builds `llama-server` from source (no docker-in-docker needed — vast.ai
   containers don't reliably support that), and runs it bound to
-  `0.0.0.0:8000` gated by a bearer API key.
-- By default (`PUBLIC_EXPOSE=false`), the port is **not** mapped publicly
-  — you reach it only via SSH tunnel into the instance, which vast.ai
-  provides for every rental.
+  `127.0.0.1:8000` (never directly public) gated by a bearer API key.
+- By default (`PUBLIC_EXPOSE=false`), nothing is mapped publicly — you
+  reach it only via SSH tunnel into the instance, which vast.ai provides
+  for every rental.
+- If `PUBLIC_EXPOSE=true`, a [Caddy](https://caddyserver.com) reverse proxy
+  with a self-signed HTTPS cert (`tls internal`) is additionally installed
+  and mapped to the public port — plain HTTP isn't offered publicly, since
+  a browser (e.g. the GitHub Pages web console below) would block it as
+  mixed content on an https page.
 - A self-stop safety net: the instance stops itself after
   `AUTO_SHUTDOWN_MINUTES` (default 12h) via vast.ai's own API, in case you
   forget to tear it down.
@@ -161,9 +166,43 @@ curl http://localhost:8000/v1/chat/completions \
   -d '{"messages": [{"role": "user", "content": "hello"}]}'
 ```
 
-If you set `PUBLIC_EXPOSE=true`, use the `public_ip`/`public_port`
-terraform outputs instead of `localhost`/the tunnel — see `deploy.sh`'s
-printed instructions.
+If you set `PUBLIC_EXPOSE=true`, use `https://` with the `public_ip`/
+`public_port` terraform outputs instead of `localhost`/the tunnel — the
+first request to a new instance needs the self-signed cert trusted once
+(see the web console section below), whether you're hitting it with curl
+(`-k`/`--insecure` skips verification) or a browser.
+
+## Web console (GitHub Pages)
+
+`docs/index.html` is a small static page — chat-style input, streams the
+response — that talks directly to your instance from the browser. It's
+meant to be served via GitHub Pages:
+
+1. One-time: repo → **Settings → Pages → Source: Deploy from a branch**,
+   pick this branch (or `main`, after merging) and `/docs`, save.
+2. Deploy with `public_expose=true` (either `PUBLIC_EXPOSE=true` in `.env`
+   + `./deploy.sh`, or the `public_expose` input on the **Deploy DeepSeek
+   to vast.ai** GitHub Actions workflow). Plain SSH-tunnel mode
+   (`public_expose=false`) doesn't work here — a browser tab can't drive
+   an SSH tunnel for you.
+3. The deploy workflow writes the instance's host/port to
+   `docs/endpoint.json` and commits it, so the page autofills on load. (A
+   local `./deploy.sh` run does *not* do this — it doesn't push to git —
+   so fill in Host/Port manually on the page in that case, from the
+   printed `public_ip`/`public_port`.)
+4. Open `https://<owner>.github.io/<repo>/`. First visit
+   `https://<instance-ip>:<port>/v1/models` directly in a new tab and
+   click through the self-signed certificate warning ("Proceed anyway" /
+   "Visit site") — one-time per browser per instance, since vast.ai
+   doesn't give you a real domain/cert. Then go back to the console page,
+   paste in your API key, and send a prompt.
+
+The page only stores what you type (host/port/key) in that browser's
+`localStorage` — nothing is sent anywhere except directly to the
+host/port you enter. But once `public_expose=true`, remember: **anyone
+with the API key can query the instance** (vast.ai has no IP allowlisting)
+and the model is uncensored. Don't leave it running — or exposed — longer
+than you're actively testing.
 
 ## Troubleshooting
 
@@ -179,6 +218,10 @@ printed instructions.
 - `terraform destroy` failing to find the instance usually means it was
   already destroyed manually — delete `terraform/.vast_instance_id` and
   re-run.
+- Web console shows a network/fetch error: almost always the self-signed
+  cert hasn't been trusted yet for that instance — visit
+  `https://<ip>:<port>/v1/models` directly first (see above). Also check
+  `/workspace/caddy.log` on the instance if it persists.
 
 ## Teardown
 
