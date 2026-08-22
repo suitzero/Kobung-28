@@ -20,6 +20,10 @@ resource "null_resource" "vast_instance" {
     ctx_size        = var.ctx_size
     public_expose   = var.public_expose
     server_port     = var.server_port
+    # Not a secret (just a local path) — included so the destroy-time
+    # provisioner below can reach it via `self`, since destroy provisioners
+    # can only reference self/count.index/each.key, never other values.
+    state_file      = local.state_file
   }
 
   provisioner "local-exec" {
@@ -44,16 +48,17 @@ resource "null_resource" "vast_instance" {
     }
   }
 
-  # No `environment` block needed here: VAST_API_KEY isn't in triggers (see
-  # above), so it isn't available via `self`. destroy-time local-exec still
-  # inherits it from whatever shell invoked `terraform destroy` — deploy.sh
-  # / destroy.sh / the GitHub Actions workflow all export it before calling
-  # terraform, same as any other child process would inherit it.
+  # Destroy-time provisioners may only reference `self` (Terraform rejects
+  # any other reference, including locals/vars). VAST_API_KEY isn't in
+  # triggers on purpose (see above), so it isn't available via `self`
+  # either — destroy-time local-exec instead inherits it from whatever
+  # shell invoked `terraform destroy` (deploy.sh / destroy.sh / the GitHub
+  # Actions workflow all export it before calling terraform).
   provisioner "local-exec" {
     when    = destroy
     command = "${path.module}/../scripts/vast_destroy.sh"
     environment = {
-      STATE_FILE = local.state_file
+      STATE_FILE = self.triggers.state_file
     }
   }
 }
