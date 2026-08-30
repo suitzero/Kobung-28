@@ -92,7 +92,18 @@ if [ ! -x /workspace/llama.cpp/build/bin/llama-server ]; then
   cmake --build /workspace/llama.cpp/build --config Release --target llama-server -j\$(nproc)
 fi
 
-MODEL_FILE=\$(ls /workspace/models/*.gguf 2>/dev/null | sort | head -n1)
+# Some quant repos ship auxiliary GGUF files alongside the main model
+# (e.g. small speculative-decoding "draft"/"support" files) — picking
+# alphabetically first can grab one of those instead of the real model
+# ("-DSpark-support.gguf" sorts before ".gguf" since '-' < '.' in ASCII).
+# Prefer numbered shards (needed for llama.cpp's own multi-part loading,
+# which requires the first shard's exact path) if present, else fall back
+# to the single largest file, since auxiliary files are always far smaller
+# than the main model.
+MODEL_FILE=\$(ls /workspace/models/*-00001-of-*.gguf 2>/dev/null | sort | head -n1)
+if [ -z "\$MODEL_FILE" ]; then
+  MODEL_FILE=\$(ls -S /workspace/models/*.gguf 2>/dev/null | head -n1)
+fi
 if [ -z "\$MODEL_FILE" ]; then
   echo "no .gguf file found under /workspace/models after download" >&2
   exit 1
