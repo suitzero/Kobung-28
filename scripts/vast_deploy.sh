@@ -26,14 +26,28 @@ SERVER_PORT="${SERVER_PORT:-8000}"
 HTTPS_PORT="${HTTPS_PORT:-8443}"
 AUTO_SHUTDOWN_MINUTES="${AUTO_SHUTDOWN_MINUTES:-720}"
 
-if [ -f "$STATE_FILE" ]; then
-  echo "Instance already recorded at $STATE_FILE ($(cat "$STATE_FILE")), skipping create."
-  echo "Run terraform destroy first if you want to replace it."
-  exit 0
-fi
-
 command -v vastai >/dev/null 2>&1 || pip install -q --user vastai
 export PATH="$HOME/.local/bin:$PATH"
+
+if [ -f "$STATE_FILE" ]; then
+  RECORDED_ID=$(cat "$STATE_FILE")
+  # Don't just trust the state file — the instance may have been destroyed
+  # outside terraform entirely (manually on vast.ai's dashboard, the CLI,
+  # or vast.ai reclaiming it), in which case terraform's cached state is
+  # stale and would otherwise silently skip creating a replacement forever.
+  RAW=$(vastai show instance "$RECORDED_ID" --raw 2>/dev/null || echo '{}')
+  ALIVE=$(python3 -c "
+import json, sys
+d = json.loads(sys.argv[1])
+print('yes' if d.get('actual_status') else 'no')
+" "$RAW")
+  if [ "$ALIVE" = "yes" ]; then
+    echo "Instance $RECORDED_ID is still alive on vast.ai, skipping create."
+    exit 0
+  fi
+  echo "Instance $RECORDED_ID recorded at $STATE_FILE no longer exists on vast.ai (destroyed outside terraform) — creating a replacement." >&2
+  rm -f "$STATE_FILE"
+fi
 
 QUERY="gpu_name=${GPU_NAME} num_gpus=${NUM_GPUS} disk_space>=${DISK_GB} reliability>${MIN_RELIABILITY} rentable=true"
 echo "Searching vast.ai offers: $QUERY" >&2

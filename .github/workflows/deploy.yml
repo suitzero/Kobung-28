@@ -77,6 +77,21 @@ jobs:
         working-directory: terraform
         run: terraform init -input=false
 
+      - name: Check if previously-recorded instance is still alive
+        # Terraform only re-runs a resource's create provisioner when it's
+        # actually creating that resource. If the null_resource's triggers
+        # haven't changed, terraform sees "no changes" and skips it — even
+        # if the recorded vast.ai instance was destroyed outside terraform
+        # (dashboard, CLI, vast.ai reclaiming it). Without this, every
+        # later deploy would silently no-op forever instead of recreating
+        # anything.
+        id: preflight
+        env:
+          VAST_API_KEY: ${{ secrets.VAST_API_KEY }}
+        run: |
+          EXTRA=$(./scripts/vast_preflight.sh)
+          echo "extra_args=$EXTRA" >> "$GITHUB_OUTPUT"
+
       - name: terraform apply
         working-directory: terraform
         env:
@@ -93,7 +108,7 @@ jobs:
           TF_VAR_gpu_name: ${{ inputs.gpu_name }}
           TF_VAR_num_gpus: ${{ inputs.num_gpus }}
           TF_VAR_public_expose: ${{ inputs.public_expose }}
-        run: terraform apply -auto-approve
+        run: terraform apply -auto-approve ${{ steps.preflight.outputs.extra_args }}
 
       - uses: actions/cache/save@v4
         if: always()

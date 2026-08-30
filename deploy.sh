@@ -33,7 +33,11 @@ read -r -p "Continue? [y/N] " CONFIRM
 
 terraform -chdir=terraform init -input=false
 
-terraform -chdir=terraform apply -auto-approve \
+EXTRA_TF_ARGS=()
+PREFLIGHT=$(VAST_API_KEY="$VAST_API_KEY" ./scripts/vast_preflight.sh)
+[ -n "$PREFLIGHT" ] && EXTRA_TF_ARGS+=("$PREFLIGHT")
+
+terraform -chdir=terraform apply -auto-approve ${EXTRA_TF_ARGS[@]+"${EXTRA_TF_ARGS[@]}"} \
   -var="vast_api_key=$VAST_API_KEY" \
   -var="hf_repo=${HF_REPO:-apetersson/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128}" \
   -var="hf_token=${HF_TOKEN:-}" \
