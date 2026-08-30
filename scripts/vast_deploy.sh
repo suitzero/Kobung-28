@@ -51,11 +51,13 @@ echo "Cheapest matching offer: $OFFER_ID" >&2
 ONSTART_SCRIPT=$(cat <<SCRIPT
 set -e
 apt-get update -qq && apt-get install -y -qq python3-pip git cmake build-essential ninja-build >/dev/null
-pip3 install -q -U "huggingface_hub[hf_transfer]" vastai
+# huggingface_hub renamed its CLI from huggingface-cli to hf; the old name
+# no longer works at all (hard error, not just a deprecation warning).
+pip3 install -q -U huggingface_hub hf_transfer vastai
 export HF_HUB_ENABLE_HF_TRANSFER=1
 mkdir -p /workspace/models
-$( [ -n "$HF_TOKEN" ] && echo "huggingface-cli login --token '$HF_TOKEN' --add-to-git-credential" )
-huggingface-cli download '$HF_REPO' --include '$HF_FILE_GLOB' --local-dir /workspace/models
+$( [ -n "$HF_TOKEN" ] && echo "hf auth login --token '$HF_TOKEN' --add-to-git-credential" )
+hf download '$HF_REPO' --include '$HF_FILE_GLOB' --local-dir /workspace/models
 
 if [ ! -x /workspace/llama.cpp/build/bin/llama-server ]; then
   git clone --depth 1 --branch '$LLAMA_CPP_REF' https://github.com/ggml-org/llama.cpp /workspace/llama.cpp \
@@ -122,4 +124,33 @@ CREATE_RESULT=$("${CREATE_ARGS[@]}")
 INSTANCE_ID=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['new_contract'])" "$CREATE_RESULT")
 echo "$INSTANCE_ID" > "$STATE_FILE"
 echo "Created vast.ai instance $INSTANCE_ID" >&2
+
+# vast.ai needs a bit of time after instance creation to boot the
+# container and assign the port mapping — without this wait, terraform's
+# immediately-following data.external.vast_status read can catch it mid
+# boot (actual_status still null, ports not mapped yet), producing empty
+# outputs even though the instance is fine. Poll up to 5 minutes for
+# "running" status (and the port mapping, if public) before returning.
+echo "Waiting for instance to report running status..." >&2
+READY="no"
+for _ in $(seq 1 30); do
+  RAW=$(vastai show instance "$INSTANCE_ID" --raw 2>/dev/null || echo '{}')
+  READY=$(python3 -c "
+import json, sys
+d = json.loads(sys.argv[1])
+port_ok = True
+if sys.argv[2] == 'true':
+    mapped = (d.get('ports') or {}).get(sys.argv[3] + '/tcp')
+    port_ok = bool(mapped)
+print('yes' if d.get('actual_status') == 'running' and port_ok else 'no')
+" "$RAW" "$PUBLIC_EXPOSE" "$HTTPS_PORT")
+  [ "$READY" = "yes" ] && break
+  sleep 10
+done
+if [ "$READY" = "yes" ]; then
+  echo "Instance is running." >&2
+else
+  echo "Instance didn't report running (+ port mapping) within 5 minutes — terraform outputs may be incomplete. It's likely still booting; check again shortly with scripts/healthcheck.sh or 'vastai show instance $INSTANCE_ID'." >&2
+fi
+
 echo "Model download + llama.cpp build happens in the background — check readiness with scripts/healthcheck.sh" >&2
