@@ -1,7 +1,7 @@
 {
-  "status": "",
-  "public_expose": true,
+  "status": "destroyed",
+  "public_expose": false,
   "host": "",
   "port": "",
-  "updated_at": "2026-08-30T04:16:04Z"
+  "updated_at": "2026-08-30T04:19:00Z"
 }
