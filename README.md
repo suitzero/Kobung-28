@@ -127,7 +127,11 @@ Open a second terminal and run the printed `ssh_tunnel_command`, then:
 
 You don't need a local machine at all — `.github/workflows/deploy.yml` and
 `destroy.yml` do the same thing as `deploy.sh`/`destroy.sh`, triggered from
-the Actions tab.
+the Actions tab. `stop.yml` / `start.yml` cover the day-to-day case:
+**stop** pauses GPU billing but keeps the disk (model + built llama.cpp)
+intact, so **start** resumes in well under a minute — no re-downloading
+110GB every time. Save `destroy` for when you actually want to release the
+instance (switching GPU type/repo, or done with it entirely).
 
 1. Repo → **Settings → Secrets and variables → Actions → New repository secret**:
    - `VAST_API_KEY` (required)

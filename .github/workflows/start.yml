@@ -1,0 +1,147 @@
+name: Start vast.ai instance
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: vast-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  start:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install --user vastai
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            terraform/terraform.tfstate
+            terraform/.vast_instance_id
+          key: vast-tfstate-${{ github.run_id }}
+          restore-keys: |
+            vast-tfstate-
+
+      - name: Require LLAMA_API_KEY secret
+        env:
+          LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
+        run: |
+          if [ -z "$LLAMA_API_KEY" ]; then
+            echo "::error::LLAMA_API_KEY repo secret is not set."
+            exit 1
+          fi
+
+      - name: Start instance
+        env:
+          VAST_API_KEY: ${{ secrets.VAST_API_KEY }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          ./scripts/vast_start.sh
+
+      - name: terraform init
+        working-directory: terraform
+        run: terraform init -input=false
+
+      - name: Read existing config from terraform state
+        # terraform apply below must be given the SAME hf_repo/gpu_name/
+        # public_expose/etc. that were used originally — if any differ from
+        # what's already in null_resource.vast_instance.triggers, terraform
+        # concludes the resource needs replacing and tries to recreate the
+        # instance instead of just refreshing status. Pulling these back out
+        # of state (rather than re-declaring workflow inputs that could get
+        # out of sync) guarantees they match.
+        id: cfg
+        working-directory: terraform
+        run: terraform show -json | python3 ../scripts/vast_read_config.py >> "$GITHUB_OUTPUT"
+
+      - name: Refresh outputs
+        # No-op for the resource itself (nothing about its config changed),
+        # but data.external.vast_status is re-read on every apply, which is
+        # what picks up the port vast.ai assigned this time — it can differ
+        # from before the stop.
+        working-directory: terraform
+        env:
+          VAST_API_KEY: ${{ secrets.VAST_API_KEY }}
+          TF_VAR_vast_api_key: ${{ secrets.VAST_API_KEY }}
+          TF_VAR_hf_token: ${{ secrets.HF_TOKEN }}
+          TF_VAR_api_key: ${{ secrets.LLAMA_API_KEY }}
+          TF_VAR_hf_repo: ${{ steps.cfg.outputs.hf_repo }}
+          TF_VAR_hf_file_glob: ${{ steps.cfg.outputs.hf_file_glob }}
+          TF_VAR_gpu_name: ${{ steps.cfg.outputs.gpu_name }}
+          TF_VAR_num_gpus: ${{ steps.cfg.outputs.num_gpus }}
+          TF_VAR_min_reliability: ${{ steps.cfg.outputs.min_reliability }}
+          TF_VAR_disk_gb: ${{ steps.cfg.outputs.disk_gb }}
+          TF_VAR_base_image: ${{ steps.cfg.outputs.base_image }}
+          TF_VAR_llama_cpp_ref: ${{ steps.cfg.outputs.llama_cpp_ref }}
+          TF_VAR_ctx_size: ${{ steps.cfg.outputs.ctx_size }}
+          TF_VAR_public_expose: ${{ steps.cfg.outputs.public_expose }}
+          TF_VAR_server_port: ${{ steps.cfg.outputs.server_port }}
+          TF_VAR_https_port: ${{ steps.cfg.outputs.https_port }}
+        run: terraform apply -auto-approve
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: |
+            terraform/terraform.tfstate
+            terraform/.vast_instance_id
+          key: vast-tfstate-${{ github.run_id }}
+
+      - name: Publish endpoint info for the web console
+        working-directory: terraform
+        run: |
+          STATUS=$(terraform output -raw instance_status 2>/dev/null || echo "unknown")
+          HOST=$(terraform output -raw public_ip 2>/dev/null || echo "")
+          PORT=$(terraform output -raw public_port 2>/dev/null || echo "")
+          if [ -n "$HOST" ] && [ -n "$PORT" ]; then
+            PUBLIC_EXPOSE_VAL=true
+          else
+            PUBLIC_EXPOSE_VAL=false
+          fi
+          cat > ../docs/endpoint.json <<JSON
+          {
+            "status": "$STATUS",
+            "public_expose": $PUBLIC_EXPOSE_VAL,
+            "host": "$HOST",
+            "port": "$PORT",
+            "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          JSON
+
+      - name: Commit endpoint info
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/endpoint.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Update web console endpoint info [skip ci]"
+            git push
+          else
+            echo "docs/endpoint.json unchanged"
+          fi
+
+      - name: Summarize
+        working-directory: terraform
+        run: |
+          {
+            echo "## vast.ai instance started"
+            echo
+            echo '```'
+            terraform output
+            echo '```'
+            echo
+            echo "The onstart script re-runs on boot but skips the expensive parts (model already downloaded, llama.cpp already built) — it should just relaunch the server. Give it a minute, then check with scripts/healthcheck.sh."
+          } >> "$GITHUB_STEP_SUMMARY"
