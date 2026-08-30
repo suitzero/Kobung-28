@@ -76,8 +76,13 @@ hf download '$HF_REPO' --include '$HF_FILE_GLOB' --local-dir /workspace/models
 if [ ! -x /workspace/llama.cpp/build/bin/llama-server ]; then
   git clone --depth 1 --branch '$LLAMA_CPP_REF' https://github.com/ggml-org/llama.cpp /workspace/llama.cpp \
     || git clone --depth 1 https://github.com/ggml-org/llama.cpp /workspace/llama.cpp
+  # CMAKE_CUDA_ARCHITECTURES=native needs cmake >=3.24; Ubuntu 22.04's apt
+  # cmake is 3.22, which silently accepts "native" but emits it as an
+  # empty value ("nvcc fatal: Unsupported gpu architecture 'compute_'").
+  # Ask nvidia-smi directly instead — version-independent.
+  CUDA_ARCH=\$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n1 | tr -d '.')
   cmake -B /workspace/llama.cpp/build -S /workspace/llama.cpp -G Ninja \
-    -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=native
+    -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES="\$CUDA_ARCH"
   cmake --build /workspace/llama.cpp/build --config Release --target llama-server -j\$(nproc)
 fi
 
