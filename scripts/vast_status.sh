@@ -32,11 +32,16 @@ mapped = ports.get(f"{port}/tcp")
 public_port = mapped[0]["HostPort"] if mapped else ""
 
 out = {
-    "status": str(data.get("actual_status", "")),
-    "public_ip": str(data.get("public_ipaddr", "") or ""),
+    # `.get(key, "")` only substitutes the default when the key is
+    # missing — vast.ai's API returns these as explicit JSON null while
+    # an instance is still booting, which .get() passes through as None,
+    # turning into the literal string "None" once str()'d. `or ""`
+    # catches both missing-key and explicit-null cases.
+    "status": str(data.get("actual_status") or ""),
+    "public_ip": str(data.get("public_ipaddr") or ""),
     "public_port": str(public_port),
-    "ssh_host": str(data.get("ssh_host", "") or ""),
-    "ssh_port": str(data.get("ssh_port", "") or ""),
+    "ssh_host": str(data.get("ssh_host") or ""),
+    "ssh_port": str(data.get("ssh_port") or ""),
 }
 print(json.dumps(out))
 PYEOF
