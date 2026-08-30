@@ -20,8 +20,8 @@ if not match:
 triggers = match[0]["values"]["triggers"]
 keys = [
     "hf_repo", "hf_file_glob", "gpu_name", "num_gpus", "min_reliability",
-    "disk_gb", "base_image", "llama_cpp_ref", "ctx_size", "public_expose",
-    "server_port", "https_port",
+    "disk_gb", "base_image", "llama_cpp_ref", "huggingface_hub_version",
+    "vastai_version", "ctx_size", "public_expose", "server_port", "https_port",
 ]
 for key in keys:
     print(f"{key}={triggers[key]}")

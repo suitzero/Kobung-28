@@ -17,7 +17,9 @@ NUM_GPUS="${NUM_GPUS:-2}"
 MIN_RELIABILITY="${MIN_RELIABILITY:-0.95}"
 DISK_GB="${DISK_GB:-200}"
 BASE_IMAGE="${BASE_IMAGE:-nvidia/cuda:12.4.1-devel-ubuntu22.04}"
-LLAMA_CPP_REF="${LLAMA_CPP_REF:-master}"
+LLAMA_CPP_REF="${LLAMA_CPP_REF:-b10680}"
+HUGGINGFACE_HUB_VERSION="${HUGGINGFACE_HUB_VERSION:-1.29.0}"
+VASTAI_VERSION="${VASTAI_VERSION:-1.5.6}"
 CTX_SIZE="${CTX_SIZE:-8192}"
 HF_FILE_GLOB="${HF_FILE_GLOB:-*.gguf}"
 HF_TOKEN="${HF_TOKEN:-}"
@@ -26,7 +28,7 @@ SERVER_PORT="${SERVER_PORT:-8000}"
 HTTPS_PORT="${HTTPS_PORT:-8443}"
 AUTO_SHUTDOWN_MINUTES="${AUTO_SHUTDOWN_MINUTES:-720}"
 
-command -v vastai >/dev/null 2>&1 || pip install -q --user vastai
+command -v vastai >/dev/null 2>&1 || pip install -q --user "vastai==${VASTAI_VERSION}"
 export PATH="$HOME/.local/bin:$PATH"
 
 if [ -f "$STATE_FILE" ]; then
@@ -65,9 +67,13 @@ echo "Cheapest matching offer: $OFFER_ID" >&2
 ONSTART_SCRIPT=$(cat <<SCRIPT
 set -e
 apt-get update -qq && apt-get install -y -qq python3-pip git cmake build-essential ninja-build >/dev/null
-# huggingface_hub renamed its CLI from huggingface-cli to hf; the old name
-# no longer works at all (hard error, not just a deprecation warning).
-pip3 install -q -U huggingface_hub hf_transfer vastai
+# Pinned rather than -U/latest: huggingface_hub renamed its CLI from
+# huggingface-cli to hf with a past release (the old name became a hard
+# error, not just a deprecation warning) — an unpinned install picks up
+# whatever's newest at deploy time, including the next breaking change.
+# Bump these intentionally via the huggingface_hub_version/vastai_version
+# terraform variables when you want to.
+pip3 install -q "huggingface_hub==${HUGGINGFACE_HUB_VERSION}" hf_transfer "vastai==${VASTAI_VERSION}"
 export HF_HUB_ENABLE_HF_TRANSFER=1
 mkdir -p /workspace/models
 $( [ -n "$HF_TOKEN" ] && echo "hf auth login --token '$HF_TOKEN' --add-to-git-credential" )

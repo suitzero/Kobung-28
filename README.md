@@ -217,6 +217,23 @@ the instance** (vast.ai has no IP allowlisting) and the model is
 uncensored. Don't leave it running — or exposed — longer than you're
 actively testing.
 
+## Pinned versions
+
+`llama_cpp_ref`, `huggingface_hub_version`, and `vastai_version` (terraform
+variables, defaults in `terraform/variables.tf`) are pinned to specific
+known-good versions rather than "master"/latest. This is deliberate: a
+huggingface_hub release once removed the `huggingface-cli` command outright
+(hard error, not a warning) with no notice, which broke every fresh deploy
+until it was pinned. An unpinned build is a live bet that nothing upstream
+changed today.
+
+Bump them on purpose when you want newer versions — check
+[llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases) (tag
+format `b<N>`, cut on nearly every commit) and
+[huggingface_hub releases](https://github.com/huggingface/huggingface_hub/releases)
+first, then update the default in `variables.tf` (or pass `-var`) and test
+with a throwaway deploy before relying on it.
+
 ## Troubleshooting
 
 - SSH directly into the box (same host/port as `ssh_tunnel_command`, minus

@@ -60,9 +60,21 @@ variable "base_image" {
 }
 
 variable "llama_cpp_ref" {
-  description = "git ref (branch/tag) of ggml-org/llama.cpp to build"
+  description = "git ref (tag, not a moving branch) of ggml-org/llama.cpp to build. llama.cpp tags a build number (b<N>) on nearly every commit — pin to one of those rather than 'master' so a fresh deploy can't silently pick up a breaking change. Bump intentionally when you want a newer build: https://github.com/ggml-org/llama.cpp/releases"
   type        = string
-  default     = "master"
+  default     = "b10680"
+}
+
+variable "huggingface_hub_version" {
+  description = "Pinned huggingface_hub pip version (provides the `hf` CLI used to download the model). huggingface-cli was removed outright in a past release, which is exactly the kind of break pinning avoids — bump intentionally: https://github.com/huggingface/huggingface_hub/releases"
+  type        = string
+  default     = "1.29.0"
+}
+
+variable "vastai_version" {
+  description = "Pinned vastai pip CLI version, used both by the deploy scripts and inside the instance itself (self-stop safety net)."
+  type        = string
+  default     = "1.5.6"
 }
 
 variable "ctx_size" {
