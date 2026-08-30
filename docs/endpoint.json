@@ -1,7 +1,7 @@
 {
-  "status": "not_deployed",
-  "public_expose": false,
-  "host": "",
-  "port": "",
-  "updated_at": ""
+  "status": "running",
+  "public_expose": true,
+  "host": "150.136.39.147",
+  "port": "32628",
+  "updated_at": "2026-08-30T03:35:35Z"
 }
