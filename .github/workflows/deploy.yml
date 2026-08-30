@@ -77,6 +77,12 @@ jobs:
       - name: terraform apply
         working-directory: terraform
         env:
+          # Both forms needed: TF_VAR_* is how terraform resolves var.vast_api_key
+          # (used by the create provisioner), while the plain VAST_API_KEY is
+          # what the destroy-time provisioner and data.external.vast_status
+          # inherit directly from terraform's own process environment — they
+          # deliberately don't get it via a var/trigger (see main.tf comments).
+          VAST_API_KEY: ${{ secrets.VAST_API_KEY }}
           TF_VAR_vast_api_key: ${{ secrets.VAST_API_KEY }}
           TF_VAR_hf_token: ${{ secrets.HF_TOKEN }}
           TF_VAR_api_key: ${{ steps.apikey.outputs.key }}
