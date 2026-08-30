@@ -131,16 +131,18 @@ the Actions tab.
 
 1. Repo → **Settings → Secrets and variables → Actions → New repository secret**:
    - `VAST_API_KEY` (required)
+   - `LLAMA_API_KEY` (required) — generate one yourself, e.g. `openssl rand
+     -hex 32`, and set it here. **This repo is public**, which means Actions
+     run logs and job summaries are publicly viewable by anyone — so the
+     deploy workflow refuses to run if this isn't set rather than
+     generating (and inevitably publishing) a key for you.
    - `HF_TOKEN` (optional — only if `HF_REPO` is gated)
-   - `LLAMA_API_KEY` (optional but recommended — without it, a new random
-     key is generated on every deploy run and shown once in that run's job
-     summary; setting it yourself keeps the same key across redeploys)
 2. Actions tab → **Deploy DeepSeek to vast.ai** → **Run workflow**. Adjust
    `hf_repo`/`gpu_name`/`num_gpus`/`public_expose` if you want something
    other than the defaults.
 3. When it finishes, open the run's **Summary** for the `ssh_tunnel_command`
-   (or public IP/port if `public_expose=true`) and the API key if one was
-   generated for you.
+   (or public IP/port if `public_expose=true`). The API key is never
+   printed anywhere — it's the value you set as the `LLAMA_API_KEY` secret.
 4. When done, Actions tab → **Destroy vast.ai instance** → **Run workflow**.
 
 Terraform state is cached between runs (`actions/cache`) so the destroy
@@ -197,12 +199,19 @@ meant to be served via GitHub Pages:
    doesn't give you a real domain/cert. Then go back to the console page,
    paste in your API key, and send a prompt.
 
-The page only stores what you type (host/port/key) in that browser's
-`localStorage` — nothing is sent anywhere except directly to the
-host/port you enter. But once `public_expose=true`, remember: **anyone
-with the API key can query the instance** (vast.ai has no IP allowlisting)
-and the model is uncensored. Don't leave it running — or exposed — longer
-than you're actively testing.
+`docs/endpoint.json` only ever contains host/port/status — never the API
+key, and never will, since this repo is public: anything committed to
+`docs/` is a plain publicly-fetchable URL with no auth, so a key written
+there would be handed to the entire internet along with a live endpoint.
+The key only ever lives in your browser's `localStorage`, which you set by
+pasting it into the page yourself (once per browser — it persists after
+that). Nothing you type is sent anywhere except directly to the host/port
+you enter.
+
+Once `public_expose=true`, remember: **anyone with the API key can query
+the instance** (vast.ai has no IP allowlisting) and the model is
+uncensored. Don't leave it running — or exposed — longer than you're
+actively testing.
 
 ## Troubleshooting
 

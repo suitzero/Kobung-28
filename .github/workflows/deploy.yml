@@ -58,17 +58,20 @@ jobs:
           restore-keys: |
             vast-tfstate-
 
-      - name: Generate LLAMA_API_KEY if not set as a secret
-        id: apikey
+      - name: Require LLAMA_API_KEY secret
+        # This repo is public, which means Actions run logs AND job summaries
+        # are publicly viewable by anyone (same as any other public-repo
+        # content) — so a key generated here and printed anywhere in this
+        # run would be posted to the open internet alongside a live,
+        # uncensored model endpoint. So: require it as a secret you set
+        # yourself out-of-band, never generate or print one here.
         env:
           LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
         run: |
           if [ -z "$LLAMA_API_KEY" ]; then
-            LLAMA_API_KEY=$(openssl rand -hex 32)
-            echo "::warning::LLAMA_API_KEY secret not set — generated a one-off key for this deploy. Set the LLAMA_API_KEY repository secret to keep a stable key across redeploys."
+            echo "::error::LLAMA_API_KEY repo secret is not set. This repo is public, so a key generated and printed by this workflow would be publicly visible. Generate one yourself (e.g. 'openssl rand -hex 32') and add it as a repository secret (Settings -> Secrets and variables -> Actions), then re-run."
+            exit 1
           fi
-          echo "::add-mask::$LLAMA_API_KEY"
-          echo "key=$LLAMA_API_KEY" >> "$GITHUB_OUTPUT"
 
       - name: terraform init
         working-directory: terraform
@@ -85,7 +88,7 @@ jobs:
           VAST_API_KEY: ${{ secrets.VAST_API_KEY }}
           TF_VAR_vast_api_key: ${{ secrets.VAST_API_KEY }}
           TF_VAR_hf_token: ${{ secrets.HF_TOKEN }}
-          TF_VAR_api_key: ${{ steps.apikey.outputs.key }}
+          TF_VAR_api_key: ${{ secrets.LLAMA_API_KEY }}
           TF_VAR_hf_repo: ${{ inputs.hf_repo }}
           TF_VAR_gpu_name: ${{ inputs.gpu_name }}
           TF_VAR_num_gpus: ${{ inputs.num_gpus }}
@@ -136,9 +139,6 @@ jobs:
 
       - name: Summarize
         working-directory: terraform
-        env:
-          LLAMA_API_KEY_SET_AS_SECRET: ${{ secrets.LLAMA_API_KEY != '' }}
-          GENERATED_KEY: ${{ steps.apikey.outputs.key }}
         run: |
           {
             echo "## vast.ai deploy"
@@ -149,13 +149,5 @@ jobs:
             echo
             echo "Save the instance id from \`terraform/.vast_instance_id\` (also cached) — pass it to the destroy workflow's \`instance_id\` input if the cache ever goes missing."
             echo
-            echo "Web console: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/ (needs GitHub Pages enabled once — Settings → Pages → Deploy from a branch → this branch → /docs)."
-            if [ "$LLAMA_API_KEY_SET_AS_SECRET" = "false" ]; then
-              echo
-              # Intentionally unmasked here: the job summary isn't covered by
-              # log masking, and this is the only place this one-off key is
-              # ever surfaced. Set the LLAMA_API_KEY repo secret to avoid
-              # this — the key will then stay stable across redeploys.
-              echo "LLAMA_API_KEY (generated for this run only): \`$GENERATED_KEY\`"
-            fi
+            echo "Web console: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/ (needs GitHub Pages enabled once — Settings → Pages → Deploy from a branch → this branch → /docs). This repo is public, so paste your LLAMA_API_KEY into the console yourself (it's saved in that browser's local storage) — it is never written anywhere in this repo or in these Actions logs."
           } >> "$GITHUB_STEP_SUMMARY"
