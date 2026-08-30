@@ -1,7 +1,7 @@
 {
-  "status": "destroyed",
-  "public_expose": false,
-  "host": "",
-  "port": "",
-  "updated_at": "2026-08-30T04:19:00Z"
+  "status": "running",
+  "public_expose": true,
+  "host": "150.136.39.147",
+  "port": "31712",
+  "updated_at": "2026-08-30T04:22:12Z"
 }
