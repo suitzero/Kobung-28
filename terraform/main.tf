@@ -9,44 +9,48 @@ resource "null_resource" "vast_instance" {
   # is config, not stored state) or inherited from the calling shell's
   # environment — never through triggers.
   triggers = {
-    hf_repo         = var.hf_repo
-    hf_file_glob    = var.hf_file_glob
-    gpu_name        = var.gpu_name
-    num_gpus        = var.num_gpus
-    min_reliability = var.min_reliability
-    disk_gb         = var.disk_gb
-    base_image      = var.base_image
-    llama_cpp_ref   = var.llama_cpp_ref
-    ctx_size        = var.ctx_size
-    public_expose   = var.public_expose
-    server_port     = var.server_port
-    https_port      = var.https_port
+    hf_repo                 = var.hf_repo
+    hf_file_glob            = var.hf_file_glob
+    gpu_name                = var.gpu_name
+    num_gpus                = var.num_gpus
+    min_reliability         = var.min_reliability
+    disk_gb                 = var.disk_gb
+    base_image              = var.base_image
+    llama_cpp_ref           = var.llama_cpp_ref
+    huggingface_hub_version = var.huggingface_hub_version
+    vastai_version          = var.vastai_version
+    ctx_size                = var.ctx_size
+    public_expose           = var.public_expose
+    server_port             = var.server_port
+    https_port              = var.https_port
     # Not a secret (just a local path) — included so the destroy-time
     # provisioner below can reach it via `self`, since destroy provisioners
     # can only reference self/count.index/each.key, never other values.
-    state_file      = local.state_file
+    state_file              = local.state_file
   }
 
   provisioner "local-exec" {
     command = "${path.module}/../scripts/vast_deploy.sh"
     environment = {
-      VAST_API_KEY          = var.vast_api_key
-      HF_REPO               = var.hf_repo
-      HF_FILE_GLOB          = var.hf_file_glob
-      HF_TOKEN              = var.hf_token
-      API_KEY               = var.api_key
-      GPU_NAME              = var.gpu_name
-      NUM_GPUS              = var.num_gpus
-      MIN_RELIABILITY       = var.min_reliability
-      DISK_GB               = var.disk_gb
-      BASE_IMAGE            = var.base_image
-      LLAMA_CPP_REF         = var.llama_cpp_ref
-      CTX_SIZE              = var.ctx_size
-      PUBLIC_EXPOSE         = var.public_expose
-      SERVER_PORT           = var.server_port
-      HTTPS_PORT            = var.https_port
-      AUTO_SHUTDOWN_MINUTES = var.auto_shutdown_minutes
-      STATE_FILE            = local.state_file
+      VAST_API_KEY            = var.vast_api_key
+      HF_REPO                 = var.hf_repo
+      HF_FILE_GLOB            = var.hf_file_glob
+      HF_TOKEN                = var.hf_token
+      API_KEY                 = var.api_key
+      GPU_NAME                = var.gpu_name
+      NUM_GPUS                = var.num_gpus
+      MIN_RELIABILITY         = var.min_reliability
+      DISK_GB                 = var.disk_gb
+      BASE_IMAGE              = var.base_image
+      LLAMA_CPP_REF           = var.llama_cpp_ref
+      HUGGINGFACE_HUB_VERSION = var.huggingface_hub_version
+      VASTAI_VERSION          = var.vastai_version
+      CTX_SIZE                = var.ctx_size
+      PUBLIC_EXPOSE           = var.public_expose
+      SERVER_PORT             = var.server_port
+      HTTPS_PORT              = var.https_port
+      AUTO_SHUTDOWN_MINUTES   = var.auto_shutdown_minutes
+      STATE_FILE              = local.state_file
     }
   }
 

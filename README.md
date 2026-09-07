@@ -56,8 +56,9 @@ etc).
 
 ## What gets created
 
-- One rented vast.ai instance (`GPU_NAME` x `NUM_GPUS`, default 2x A100
-  80GB) booting a CUDA dev image.
+- One rented vast.ai instance (`GPU_NAME` x `NUM_GPUS`, default 1x H200
+  140GB — the whole model fits on a single card, no tensor split needed)
+  booting a CUDA dev image.
 - An onstart script that downloads the GGUF model from Hugging Face,
   builds `llama-server` from source (no docker-in-docker needed — vast.ai
   containers don't reliably support that), and runs it bound to
@@ -83,9 +84,10 @@ https://cloud.vast.ai/create/ before deploying):
 
 | GPUs | Total VRAM | Typical $/hr on vast.ai |
 |---|---|---|
-| 2x A100 80GB SXM (default) | 160GB | ~$1.50-2.50 |
+| 1x H200 (default) | 140GB | ~$2.50-4 — single GPU, no tensor split, best bandwidth |
+| 2x A100 80GB SXM | 160GB | ~$1.50-2.50 (cheaper, but model has to split across 2 GPUs) |
 | 2x H100 80GB SXM | 160GB | ~$3-5 |
-| 3x RTX A6000 48GB | 144GB | ~$1-1.80 (cheaper, no NVLink but llama.cpp doesn't need it) |
+| 3x RTX A6000 48GB | 144GB | ~$1-1.80 (cheapest, no NVLink but llama.cpp doesn't need it) |
 | 5x RTX 4090 24GB | 120GB | ~$1.20-2 (tight headroom for KV cache/context) |
 
 This is a fraction of the equivalent hyperscaler cost, but it still bills
@@ -127,7 +129,11 @@ Open a second terminal and run the printed `ssh_tunnel_command`, then:
 
 You don't need a local machine at all — `.github/workflows/deploy.yml` and
 `destroy.yml` do the same thing as `deploy.sh`/`destroy.sh`, triggered from
-the Actions tab.
+the Actions tab. `stop.yml` / `start.yml` cover the day-to-day case:
+**stop** pauses GPU billing but keeps the disk (model + built llama.cpp)
+intact, so **start** resumes in well under a minute — no re-downloading
+110GB every time. Save `destroy` for when you actually want to release the
+instance (switching GPU type/repo, or done with it entirely).
 
 1. Repo → **Settings → Secrets and variables → Actions → New repository secret**:
    - `VAST_API_KEY` (required)
@@ -212,6 +218,23 @@ Once `public_expose=true`, remember: **anyone with the API key can query
 the instance** (vast.ai has no IP allowlisting) and the model is
 uncensored. Don't leave it running — or exposed — longer than you're
 actively testing.
+
+## Pinned versions
+
+`llama_cpp_ref`, `huggingface_hub_version`, and `vastai_version` (terraform
+variables, defaults in `terraform/variables.tf`) are pinned to specific
+known-good versions rather than "master"/latest. This is deliberate: a
+huggingface_hub release once removed the `huggingface-cli` command outright
+(hard error, not a warning) with no notice, which broke every fresh deploy
+until it was pinned. An unpinned build is a live bet that nothing upstream
+changed today.
+
+Bump them on purpose when you want newer versions — check
+[llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases) (tag
+format `b<N>`, cut on nearly every commit) and
+[huggingface_hub releases](https://github.com/huggingface/huggingface_hub/releases)
+first, then update the default in `variables.tf` (or pass `-var`) and test
+with a throwaway deploy before relying on it.
 
 ## Troubleshooting
 

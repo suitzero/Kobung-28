@@ -1,0 +1,61 @@
+name: Stop vast.ai instance
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: vast-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  stop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install --user vastai
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            terraform/terraform.tfstate
+            terraform/.vast_instance_id
+          key: vast-tfstate-${{ github.run_id }}
+          restore-keys: |
+            vast-tfstate-
+
+      - name: Stop instance
+        env:
+          VAST_API_KEY: ${{ secrets.VAST_API_KEY }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          ./scripts/vast_stop.sh
+
+      - name: Mark web console endpoint stopped
+        run: |
+          [ -f docs/endpoint.json ] || echo '{}' > docs/endpoint.json
+          python3 -c "import json, datetime; d = json.load(open('docs/endpoint.json')); d['status'] = 'stopped'; d['updated_at'] = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'); json.dump(d, open('docs/endpoint.json', 'w'), indent=2)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/endpoint.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Mark web console endpoint stopped [skip ci]"
+            git push
+          else
+            echo "docs/endpoint.json unchanged"
+          fi
+
+      - name: Summarize
+        run: |
+          {
+            echo "## vast.ai instance stopped"
+            echo
+            echo "GPU billing has stopped; disk (model + build) is preserved. Run **Start vast.ai instance** to resume — no re-download needed."
+          } >> "$GITHUB_STEP_SUMMARY"

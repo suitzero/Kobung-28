@@ -12,12 +12,14 @@ set -euo pipefail
 : "${API_KEY:?}"
 : "${STATE_FILE:?}"
 
-GPU_NAME="${GPU_NAME:-A100_SXM4}"
-NUM_GPUS="${NUM_GPUS:-2}"
+GPU_NAME="${GPU_NAME:-H200}"
+NUM_GPUS="${NUM_GPUS:-1}"
 MIN_RELIABILITY="${MIN_RELIABILITY:-0.95}"
 DISK_GB="${DISK_GB:-200}"
 BASE_IMAGE="${BASE_IMAGE:-nvidia/cuda:12.4.1-devel-ubuntu22.04}"
-LLAMA_CPP_REF="${LLAMA_CPP_REF:-master}"
+LLAMA_CPP_REF="${LLAMA_CPP_REF:-b10680}"
+HUGGINGFACE_HUB_VERSION="${HUGGINGFACE_HUB_VERSION:-1.29.0}"
+VASTAI_VERSION="${VASTAI_VERSION:-1.5.6}"
 CTX_SIZE="${CTX_SIZE:-8192}"
 HF_FILE_GLOB="${HF_FILE_GLOB:-*.gguf}"
 HF_TOKEN="${HF_TOKEN:-}"
@@ -26,14 +28,28 @@ SERVER_PORT="${SERVER_PORT:-8000}"
 HTTPS_PORT="${HTTPS_PORT:-8443}"
 AUTO_SHUTDOWN_MINUTES="${AUTO_SHUTDOWN_MINUTES:-720}"
 
-if [ -f "$STATE_FILE" ]; then
-  echo "Instance already recorded at $STATE_FILE ($(cat "$STATE_FILE")), skipping create."
-  echo "Run terraform destroy first if you want to replace it."
-  exit 0
-fi
-
-command -v vastai >/dev/null 2>&1 || pip install -q --user vastai
+command -v vastai >/dev/null 2>&1 || pip install -q --user "vastai==${VASTAI_VERSION}"
 export PATH="$HOME/.local/bin:$PATH"
+
+if [ -f "$STATE_FILE" ]; then
+  RECORDED_ID=$(cat "$STATE_FILE")
+  # Don't just trust the state file — the instance may have been destroyed
+  # outside terraform entirely (manually on vast.ai's dashboard, the CLI,
+  # or vast.ai reclaiming it), in which case terraform's cached state is
+  # stale and would otherwise silently skip creating a replacement forever.
+  RAW=$(vastai show instance "$RECORDED_ID" --raw 2>/dev/null || echo '{}')
+  ALIVE=$(python3 -c "
+import json, sys
+d = json.loads(sys.argv[1])
+print('yes' if d.get('actual_status') else 'no')
+" "$RAW")
+  if [ "$ALIVE" = "yes" ]; then
+    echo "Instance $RECORDED_ID is still alive on vast.ai, skipping create."
+    exit 0
+  fi
+  echo "Instance $RECORDED_ID recorded at $STATE_FILE no longer exists on vast.ai (destroyed outside terraform) — creating a replacement." >&2
+  rm -f "$STATE_FILE"
+fi
 
 QUERY="gpu_name=${GPU_NAME} num_gpus=${NUM_GPUS} disk_space>=${DISK_GB} reliability>${MIN_RELIABILITY} rentable=true"
 echo "Searching vast.ai offers: $QUERY" >&2
@@ -51,9 +67,13 @@ echo "Cheapest matching offer: $OFFER_ID" >&2
 ONSTART_SCRIPT=$(cat <<SCRIPT
 set -e
 apt-get update -qq && apt-get install -y -qq python3-pip git cmake build-essential ninja-build >/dev/null
-# huggingface_hub renamed its CLI from huggingface-cli to hf; the old name
-# no longer works at all (hard error, not just a deprecation warning).
-pip3 install -q -U huggingface_hub hf_transfer vastai
+# Pinned rather than -U/latest: huggingface_hub renamed its CLI from
+# huggingface-cli to hf with a past release (the old name became a hard
+# error, not just a deprecation warning) — an unpinned install picks up
+# whatever's newest at deploy time, including the next breaking change.
+# Bump these intentionally via the huggingface_hub_version/vastai_version
+# terraform variables when you want to.
+pip3 install -q "huggingface_hub==${HUGGINGFACE_HUB_VERSION}" hf_transfer "vastai==${VASTAI_VERSION}"
 export HF_HUB_ENABLE_HF_TRANSFER=1
 mkdir -p /workspace/models
 $( [ -n "$HF_TOKEN" ] && echo "hf auth login --token '$HF_TOKEN' --add-to-git-credential" )
@@ -62,12 +82,28 @@ hf download '$HF_REPO' --include '$HF_FILE_GLOB' --local-dir /workspace/models
 if [ ! -x /workspace/llama.cpp/build/bin/llama-server ]; then
   git clone --depth 1 --branch '$LLAMA_CPP_REF' https://github.com/ggml-org/llama.cpp /workspace/llama.cpp \
     || git clone --depth 1 https://github.com/ggml-org/llama.cpp /workspace/llama.cpp
+  # CMAKE_CUDA_ARCHITECTURES=native needs cmake >=3.24; Ubuntu 22.04's apt
+  # cmake is 3.22, which silently accepts "native" but emits it as an
+  # empty value ("nvcc fatal: Unsupported gpu architecture 'compute_'").
+  # Ask nvidia-smi directly instead — version-independent.
+  CUDA_ARCH=\$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n1 | tr -d '.')
   cmake -B /workspace/llama.cpp/build -S /workspace/llama.cpp -G Ninja \
-    -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=native
+    -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES="\$CUDA_ARCH"
   cmake --build /workspace/llama.cpp/build --config Release --target llama-server -j\$(nproc)
 fi
 
-MODEL_FILE=\$(ls /workspace/models/*.gguf 2>/dev/null | sort | head -n1)
+# Some quant repos ship auxiliary GGUF files alongside the main model
+# (e.g. small speculative-decoding "draft"/"support" files) — picking
+# alphabetically first can grab one of those instead of the real model
+# ("-DSpark-support.gguf" sorts before ".gguf" since '-' < '.' in ASCII).
+# Prefer numbered shards (needed for llama.cpp's own multi-part loading,
+# which requires the first shard's exact path) if present, else fall back
+# to the single largest file, since auxiliary files are always far smaller
+# than the main model.
+MODEL_FILE=\$(ls /workspace/models/*-00001-of-*.gguf 2>/dev/null | sort | head -n1)
+if [ -z "\$MODEL_FILE" ]; then
+  MODEL_FILE=\$(ls -S /workspace/models/*.gguf 2>/dev/null | head -n1)
+fi
 if [ -z "\$MODEL_FILE" ]; then
   echo "no .gguf file found under /workspace/models after download" >&2
   exit 1

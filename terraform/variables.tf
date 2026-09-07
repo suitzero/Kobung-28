@@ -30,15 +30,15 @@ variable "api_key" {
 }
 
 variable "gpu_name" {
-  description = "vast.ai gpu_name filter, e.g. A100_SXM4, H100_SXM, RTX_4090. Must total enough VRAM for the chosen quant (~110GB for the default DS4-Quality128 model) plus headroom for KV cache."
+  description = "vast.ai gpu_name filter, e.g. H200, A100_SXM4, H100_SXM, RTX_4090. Must total enough VRAM for the chosen quant (~110GB for the default DS4-Quality128 model) plus headroom for KV cache. Default is a single H200 (140GB) — the whole model fits on one GPU with ~30GB to spare, so no multi-GPU tensor split is needed at all."
   type        = string
-  default     = "A100_SXM4"
+  default     = "H200"
 }
 
 variable "num_gpus" {
   description = "Number of GPUs to rent (must match gpu_name's availability on vast.ai)"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "min_reliability" {
@@ -60,9 +60,21 @@ variable "base_image" {
 }
 
 variable "llama_cpp_ref" {
-  description = "git ref (branch/tag) of ggml-org/llama.cpp to build"
+  description = "git ref (tag, not a moving branch) of ggml-org/llama.cpp to build. llama.cpp tags a build number (b<N>) on nearly every commit — pin to one of those rather than 'master' so a fresh deploy can't silently pick up a breaking change. Bump intentionally when you want a newer build: https://github.com/ggml-org/llama.cpp/releases"
   type        = string
-  default     = "master"
+  default     = "b10680"
+}
+
+variable "huggingface_hub_version" {
+  description = "Pinned huggingface_hub pip version (provides the `hf` CLI used to download the model). huggingface-cli was removed outright in a past release, which is exactly the kind of break pinning avoids — bump intentionally: https://github.com/huggingface/huggingface_hub/releases"
+  type        = string
+  default     = "1.29.0"
+}
+
+variable "vastai_version" {
+  description = "Pinned vastai pip CLI version, used both by the deploy scripts and inside the instance itself (self-stop safety net)."
+  type        = string
+  default     = "1.5.6"
 }
 
 variable "ctx_size" {

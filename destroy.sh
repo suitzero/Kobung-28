@@ -17,6 +17,6 @@ terraform -chdir=terraform destroy \
   -var="hf_repo=${HF_REPO:-apetersson/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128}" \
   -var="hf_token=${HF_TOKEN:-}" \
   -var="api_key=${LLAMA_API_KEY:-unused}" \
-  -var="gpu_name=${GPU_NAME:-A100_SXM4}" \
-  -var="num_gpus=${NUM_GPUS:-2}" \
+  -var="gpu_name=${GPU_NAME:-H200}" \
+  -var="num_gpus=${NUM_GPUS:-1}" \
   -var="public_expose=${PUBLIC_EXPOSE:-false}"
