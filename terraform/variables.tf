@@ -30,15 +30,15 @@ variable "api_key" {
 }
 
 variable "gpu_name" {
-  description = "vast.ai gpu_name filter, e.g. A100_SXM4, H100_SXM, RTX_4090. Must total enough VRAM for the chosen quant (~110GB for the default DS4-Quality128 model) plus headroom for KV cache."
+  description = "vast.ai gpu_name filter, e.g. H200, A100_SXM4, H100_SXM, RTX_4090. Must total enough VRAM for the chosen quant (~110GB for the default DS4-Quality128 model) plus headroom for KV cache. Default is a single H200 (140GB) — the whole model fits on one GPU with ~30GB to spare, so no multi-GPU tensor split is needed at all."
   type        = string
-  default     = "A100_SXM4"
+  default     = "H200"
 }
 
 variable "num_gpus" {
   description = "Number of GPUs to rent (must match gpu_name's availability on vast.ai)"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "min_reliability" {

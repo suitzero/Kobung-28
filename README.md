@@ -56,8 +56,9 @@ etc).
 
 ## What gets created
 
-- One rented vast.ai instance (`GPU_NAME` x `NUM_GPUS`, default 2x A100
-  80GB) booting a CUDA dev image.
+- One rented vast.ai instance (`GPU_NAME` x `NUM_GPUS`, default 1x H200
+  140GB — the whole model fits on a single card, no tensor split needed)
+  booting a CUDA dev image.
 - An onstart script that downloads the GGUF model from Hugging Face,
   builds `llama-server` from source (no docker-in-docker needed — vast.ai
   containers don't reliably support that), and runs it bound to
@@ -83,9 +84,10 @@ https://cloud.vast.ai/create/ before deploying):
 
 | GPUs | Total VRAM | Typical $/hr on vast.ai |
 |---|---|---|
-| 2x A100 80GB SXM (default) | 160GB | ~$1.50-2.50 |
+| 1x H200 (default) | 140GB | ~$2.50-4 — single GPU, no tensor split, best bandwidth |
+| 2x A100 80GB SXM | 160GB | ~$1.50-2.50 (cheaper, but model has to split across 2 GPUs) |
 | 2x H100 80GB SXM | 160GB | ~$3-5 |
-| 3x RTX A6000 48GB | 144GB | ~$1-1.80 (cheaper, no NVLink but llama.cpp doesn't need it) |
+| 3x RTX A6000 48GB | 144GB | ~$1-1.80 (cheapest, no NVLink but llama.cpp doesn't need it) |
 | 5x RTX 4090 24GB | 120GB | ~$1.20-2 (tight headroom for KV cache/context) |
 
 This is a fraction of the equivalent hyperscaler cost, but it still bills

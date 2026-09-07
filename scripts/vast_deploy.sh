@@ -12,8 +12,8 @@ set -euo pipefail
 : "${API_KEY:?}"
 : "${STATE_FILE:?}"
 
-GPU_NAME="${GPU_NAME:-A100_SXM4}"
-NUM_GPUS="${NUM_GPUS:-2}"
+GPU_NAME="${GPU_NAME:-H200}"
+NUM_GPUS="${NUM_GPUS:-1}"
 MIN_RELIABILITY="${MIN_RELIABILITY:-0.95}"
 DISK_GB="${DISK_GB:-200}"
 BASE_IMAGE="${BASE_IMAGE:-nvidia/cuda:12.4.1-devel-ubuntu22.04}"

@@ -26,7 +26,7 @@ fi
 echo
 echo "This will rent GPU infrastructure on vast.ai that bills per hour while running."
 echo "  hf_repo:        ${HF_REPO:-apetersson/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128}"
-echo "  gpu:             ${NUM_GPUS:-2}x ${GPU_NAME:-A100_SXM4}"
+echo "  gpu:             ${NUM_GPUS:-1}x ${GPU_NAME:-H200}"
 echo "  public_expose:   ${PUBLIC_EXPOSE:-false}"
 read -r -p "Continue? [y/N] " CONFIRM
 [ "$CONFIRM" = "y" ] || [ "$CONFIRM" = "Y" ] || { echo "Aborted."; exit 1; }
@@ -42,8 +42,8 @@ terraform -chdir=terraform apply -auto-approve ${EXTRA_TF_ARGS[@]+"${EXTRA_TF_AR
   -var="hf_repo=${HF_REPO:-apetersson/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128}" \
   -var="hf_token=${HF_TOKEN:-}" \
   -var="api_key=$LLAMA_API_KEY" \
-  -var="gpu_name=${GPU_NAME:-A100_SXM4}" \
-  -var="num_gpus=${NUM_GPUS:-2}" \
+  -var="gpu_name=${GPU_NAME:-H200}" \
+  -var="num_gpus=${NUM_GPUS:-1}" \
   -var="public_expose=${PUBLIC_EXPOSE:-false}"
 
 echo

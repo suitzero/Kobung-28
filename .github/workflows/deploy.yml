@@ -10,11 +10,11 @@ on:
       gpu_name:
         description: "vast.ai gpu_name filter"
         required: false
-        default: A100_SXM4
+        default: H200
       num_gpus:
         description: "Number of GPUs to rent"
         required: false
-        default: "2"
+        default: "1"
       public_expose:
         description: "Map the API port publicly (still gated by API key)? Leave false for SSH-tunnel-only access."
         required: false
