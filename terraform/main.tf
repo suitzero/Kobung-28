@@ -26,7 +26,7 @@ resource "null_resource" "vast_instance" {
     # Not a secret (just a local path) — included so the destroy-time
     # provisioner below can reach it via `self`, since destroy provisioners
     # can only reference self/count.index/each.key, never other values.
-    state_file              = local.state_file
+    state_file = local.state_file
   }
 
   provisioner "local-exec" {
