@@ -1,0 +1,9 @@
+# yamllint config for GitHub Actions workflow files.
+# Workflows legitimately have long command lines and GitHub-style truthy values,
+# so style-only rules are relaxed; yamllint still catches invalid YAML structure.
+extends: default
+
+rules:
+  line-length: disable
+  document-start: disable
+  truthy: disable
