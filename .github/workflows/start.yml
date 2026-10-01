@@ -14,19 +14,19 @@ jobs:
   start:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - run: pip install --user vastai
 
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v5
         with:
           path: |
             terraform/terraform.tfstate
@@ -94,7 +94,7 @@ jobs:
           TF_VAR_https_port: ${{ steps.cfg.outputs.https_port }}
         run: terraform apply -auto-approve
 
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@v5
         if: always()
         with:
           path: |
