@@ -40,3 +40,14 @@ jobs:
           python-version: '3.10'
       - name: Check Python compilation
         run: python3 -m py_compile scripts/*.py
+
+  lint-workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        uses: reviewdog/action-actionlint@v1
+      - name: yamllint
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          file_or_dir: .github/workflows/
